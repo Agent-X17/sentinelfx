@@ -10,15 +10,18 @@ from .redaction import redact
 from .diagnostics import validate_diagnostics
 from .isolated_mt5 import SnapshotMT5
 from .mt5_worker import collect
+from .mt5_evidence import validate_snapshot, validate_order_request
 
 
 class TradingBridge:
-    def __init__(self, application, webhook_service, authenticator, mt5, settings):
+    def __init__(self, application, webhook_service, authenticator, mt5, settings, proposal_order_checker=None, snapshot_data=None):
         self.application = application
         self.webhook_service = webhook_service
         self.authenticator = authenticator
         self.mt5 = mt5
         self.settings = settings
+        self.proposal_order_checker = proposal_order_checker
+        self.snapshot_data = snapshot_data
 
     def _persist_raw(self, db, raw_id, key, payload, status, reason):
         db.execute(
@@ -43,8 +46,11 @@ class TradingBridge:
                 check=self.webhook_service.validate(payload,idempotency_key)
                 if check.accepted and self.settings.mode != 'DISCONNECTED':
                     data = self.mt5.snapshot(check.signal['mt5_symbol']) if hasattr(self.mt5,'snapshot') else collect(self.mt5,check.signal['mt5_symbol'])
-                    bridge=TradingBridge(self.application,self.webhook_service,self.authenticator,SnapshotMT5(data),self.settings)
+                    bridge=TradingBridge(self.application,self.webhook_service,self.authenticator,SnapshotMT5(data),self.settings,
+                                         proposal_order_checker=self.mt5,snapshot_data=data)
                     return bridge.ingest(payload,secret,idempotency_key)
+        if isinstance(self.mt5,SnapshotMT5) and self.proposal_order_checker is not None:
+            result=self._ingest(payload,secret,idempotency_key);result['order_sent']=False;return result
         # Serialize intake, reservation, journal and audit as one local unit.
         # Nested application transactions share this connection on this thread.
         with self.application.store.transaction():
@@ -222,28 +228,33 @@ class TradingBridge:
             return self._blocked(raw_id,signal,'DEMO_TRADE_PROPOSALS_REQUIRE_SIMULATION_MODE')
         if self.settings.demo_trade_proposal_kill_switch:
             return self._blocked(raw_id,signal,'DEMO_TRADE_PROPOSAL_KILL_SWITCH_ACTIVE')
-        failures=validate_diagnostics(signal,symbol_result.data,tick_result.data,account_result.data)
+        failures=[]
         expected_login=self.settings.demo_expected_account_login
         expected_server=self.settings.demo_expected_broker_server
-        if not expected_login or not expected_server:
-            failures.append('MT5_EXPECTED_DEMO_ACCOUNT_NOT_CONFIGURED')
+        verified={}
+        if isinstance(self.mt5,SnapshotMT5):
+            try:
+                verified=validate_snapshot(self.snapshot_data,signal,expected_login,expected_server)
+            except InvalidData as exc:
+                failures.append(str(exc))
+            if self.proposal_order_checker is None or not hasattr(self.proposal_order_checker,'read_only_order_check'):
+                failures.append('MT5_PROPOSAL_ORDER_CHECK_UNAVAILABLE')
         else:
-            failures=[item for item in failures if item!='MT5_ACCOUNT_RECONCILIATION_UNVERIFIED']
-            if str(account_result.data.get('login'))!=expected_login or account_result.data.get('server')!=expected_server:
-                failures.append('MT5_ACCOUNT_MISMATCH')
-        if account_result.data.get('trade_mode') not in (0,'DEMO'):
-            failures.append('MT5_ACCOUNT_NOT_CONFIRMED_DEMO')
-        try:
-            age=(utcnow()-date(account_result.data.get('snapshot_at'))).total_seconds()
-            if not 0 <= age <= 30: failures.append('MT5_ACCOUNT_SNAPSHOT_STALE_OR_FUTURE')
-        except InvalidData:
-            failures.append('MT5_ACCOUNT_SNAPSHOT_TIMESTAMP_MISSING')
-        if type(self.mt5) is not MockMT5Service:
-            failures.append('MT5_PROPOSAL_ORDER_CHECK_UNAVAILABLE')
+            failures=validate_diagnostics(signal,symbol_result.data,tick_result.data,account_result.data)
+            if not expected_login or not expected_server: failures.append('MT5_EXPECTED_DEMO_ACCOUNT_NOT_CONFIGURED')
+            else:
+                failures=[item for item in failures if item!='MT5_ACCOUNT_RECONCILIATION_UNVERIFIED']
+                if str(account_result.data.get('login'))!=expected_login or account_result.data.get('server')!=expected_server: failures.append('MT5_ACCOUNT_MISMATCH')
+            if account_result.data.get('trade_mode') not in (0,'DEMO'): failures.append('MT5_ACCOUNT_NOT_CONFIRMED_DEMO')
+            try:
+                age=(utcnow()-date(account_result.data.get('snapshot_at'))).total_seconds()
+                if not 0 <= age <= 30: failures.append('MT5_ACCOUNT_SNAPSHOT_STALE_OR_FUTURE')
+            except InvalidData: failures.append('MT5_ACCOUNT_SNAPSHOT_TIMESTAMP_MISSING')
         failures=list(dict.fromkeys(failures))
         evidence={'diagnostic_checks':'PASSED' if not failures else 'FAILED','failures':failures,'account_identity_match':not any(x in failures for x in ('MT5_EXPECTED_DEMO_ACCOUNT_NOT_CONFIGURED','MT5_ACCOUNT_MISMATCH')),
                   'quote_fresh':not any('STALE' in x or 'FUTURE' in x for x in failures),'external_exposure':False,
                   'positions_count':len(positions_result.data['items']),'orders_count':len(orders_result.data['items']),'order_check':'NOT_RUN'}
+        evidence.update(verified)
         if failures:
             return self._blocked(raw_id,signal,failures[0],{'proposal_evidence':evidence})
         try:
@@ -270,12 +281,17 @@ class TradingBridge:
         if decision.get('decision')!='APPROVED_SIMULATED_TRADE' or volume is None:
             reason=(decision.get('blocking_factors') or ['RISK_ENGINE_DID_NOT_APPROVE_PROPOSAL'])[0]
             return self._blocked(raw_id,signal,reason,{'proposal_evidence':evidence,'risk':decision})
-        order_check=self.mt5.order_check({'symbol':signal['mt5_symbol'],'type':signal['direction'],'volume':volume,'price':market['price'],'sl':signal['stop_loss'],'tp':signal.get('take_profit')})
+        request={'symbol':signal['mt5_symbol'],'type':signal['direction'],'volume':volume,'price':market['price'],'sl':signal['stop_loss'],'tp':signal.get('take_profit'),'filling_mode':symbol_result.data.get('filling_mode',0)}
+        if isinstance(self.mt5,SnapshotMT5):
+            try: validate_order_request(self.snapshot_data,request)
+            except InvalidData as exc: return self._blocked(raw_id,signal,str(exc),{'proposal_evidence':evidence})
+        checker=self.mt5.order_check if type(self.mt5) is MockMT5Service else self.proposal_order_checker.read_only_order_check
+        order_check=checker(request)
         if not order_check.ok:
             return self._blocked(raw_id,signal,order_check.code,{'proposal_evidence':evidence,'order_check':order_check.to_dict()})
         evidence['order_check']='PASSED'; evidence['exact_checked_volume']=volume; evidence['evidence_source']='SYNTHETIC_TEST_FIXTURE' if type(self.mt5) is MockMT5Service else 'VERIFIED_READ_ONLY_MT5'
         try:
-            proposal=self.application.create_demo_proposal(raw_id,signal,decision,account_result.data,evidence)
+            proposal=self.application.create_demo_proposal(raw_id,signal,decision,account_result.data,evidence,evaluation_payload,volume)
         except InvalidData as exc:
             return self._blocked(raw_id,signal,str(exc))
         with self.application.store.transaction() as db:

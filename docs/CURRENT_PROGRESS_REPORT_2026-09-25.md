@@ -19,7 +19,7 @@ Current operator progress:
 - a fresh local snapshot reported demo/connected, $500 balance, $500 equity, $500 free margin, zero positions, zero pending orders and updating EURUSD bid/ask values;
 - a TradingView one-time alert reached the temporary HTTPS receiver and was rejected as designed because its connection-test payload omitted `stop_loss`;
 - a complete hypothetical signal passed local webhook structure validation but returned `NO_TRADE / MT5_DISABLED`; it was not submitted as a public TradingView alert;
-- the latest repository acceptance run passed and ran 181 tests after adding the three demo-monitor tests in this change.
+- the latest repository acceptance run passed and ran 201 tests after adding strict Phase 2 read-only MT5 evidence tests.
 
 These facts prove local delivery and read-only diagnostics. They do not prove a profitable strategy, complete broker reconciliation, real order checking or live execution readiness.
 
@@ -169,7 +169,7 @@ The following are deliberate and must remain true:
 2. Live-enabled startup and `LIVE_GATED` refuse.
 3. `order_send()` refuses under every input.
 4. There is no live execution route.
-5. Real MT5 diagnostics cannot satisfy external evidence requirements.
+5. Real MT5 diagnostics can satisfy only the strict proposal evidence protocol; they cannot authorize or submit execution.
 6. The Mac monitor cannot submit or authorize orders.
 7. Webhook inputs cannot choose the in-process mock adapter.
 8. Provider lot sizes, client equity and client risk-limit overrides are ignored.
@@ -186,9 +186,9 @@ The following remain incomplete or unverified:
 - verified real commission, spread, swap, slippage and contract specifications;
 - current news and macro evidence feeds;
 - verified provider history and strategy edge;
-- full broker-account and open-exposure reconciliation;
+- intended-host reproduction of broker-account and current/recent exposure reconciliation;
 - supported native MT5 Python host integration on the target machine;
-- native request translation and broker `order_check` against the actual demo account;
+- broker `order_check` reproduction against the actual demo account (implementation is fixture-tested only);
 - stable authenticated HTTPS ingress, rate limiting and operational monitoring;
 - backups/retention for an ongoing deployed service;
 - real browser visual/accessibility verification on this sandboxed task host;
@@ -233,4 +233,10 @@ The full historical implementation report remains in `docs/FULL_PROJECT_REPORT.m
 
 Implemented the first pre-execution step as a proposal-only workflow. A feature-gated TradingView candidate can be sized under a 0.25% maximum risk rule and persisted as `PENDING_LOCAL_REVIEW` only after authentication, freshness, replay, symbol, exposure, account-identity, demo-account, risk, and read-only order-check gates pass. Approval records `APPROVED_FOR_FUTURE_DEMO_EXECUTION` and an audit event. It cannot send an MT5 order or create a paper position.
 
-The feature defaults off and the independent kill switch defaults on. Proposal mutations are local-only and CSRF protected. One active proposal is enforced in SQLite, proposals expire automatically, history is append-only, and account identity/credential fields are redacted. Real MT5 proposal eligibility remains blocked until the isolated adapter can provide complete verified evidence and a separately reviewed order-check boundary.
+The feature defaults off and the independent kill switch defaults on. Proposal mutations are local-only and CSRF protected. One active proposal is enforced in SQLite, proposals expire automatically, history is append-only, and account identity/credential fields are redacted. Phase 2 now supplies the strict isolated evidence and order-check boundary; intended-host verification remains required.
+
+## Update: verified read-only MT5 proposal evidence
+
+Phase 2 adds the versioned `sentinelfx.mt5.readonly-evidence.v1` boundary. A short-lived worker collects terminal/account identity, explicit demo mode, balances/margin, exact symbol/tick properties, current positions/orders and recent trade activity. A second worker operation performs only `order_check` for the exact risk-sized volume and confirms identity did not change. Snapshot acquisition and checking occur outside SQLite write locks; the final proposal transaction repeats risk sizing and requires equality with the checked volume.
+
+The implementation is fixture-tested and the full 201-test acceptance gate passes. It has not been reproduced against the intended Windows MT5 demo host. **DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.**

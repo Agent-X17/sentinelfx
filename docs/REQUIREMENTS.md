@@ -4,7 +4,7 @@
 
 The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
 
-Real MT5 reads are diagnostic only. External or unknown exposure blocks candidates. Otherwise the real bridge returns `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`, with diagnostic failures for stale/invalid ticks, symbol properties and account identity/currency. Account snapshot freshness and reconciliation remain unverified. Only an explicit in-process mock in SIMULATION can use synthetic bridge evidence; HTTP input cannot select it.
+Real MT5 reads/checks are proposal evidence only and must pass the versioned isolated protocol. Missing/stale identity, terminal, symbol, quote, exposure, or exact-volume check evidence returns `NO_TRADE`. HTTP input cannot select the MT5 identity or evidence source.
 
 Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
 
@@ -32,7 +32,7 @@ Authority: `specs/requirements.txt` is the attached build specification. `specs/
 | 13. Learning | Sample count, Wilson interval, in/out-of-sample separation, no automatic risk increase | No automatic learned weight promotion; protects against spurious small-sample learning |
 | 14. Modular architecture | Domain services, webhook/bridge, read-check MT5 adapter, application orchestration, repository, research services, HTTP boundary | News/macro data remain synthetic inputs, not integrated feeds |
 | 15. UI | All eight pages, calculations, account state, raw signals, reasons, research/withdrawal forms, audit export | Recent decisions/outcomes/audit UI is capped at 100; full history remains in SQLite |
-| 16. Execution policy | Simulation/paper/connected-disabled modes; mock-only exact-volume order check; live startup refusal | order_send always refuses; live execution is intentionally absent |
+| 16. Execution policy | Simulation/paper/connected-disabled modes; mock or strictly isolated real exact-volume order check; live startup refusal | order_send always refuses; live execution is intentionally absent |
 | 17. Tests | Domain, randomized invariants, concurrency, persistence, HTTP, security, backtest/no-lookahead | Model correctness is not proof of real-world fills or investment performance |
 | 18. Final principle | Fail-closed response and atomic audited decision path | Audit persistence is required before returning approval |
 

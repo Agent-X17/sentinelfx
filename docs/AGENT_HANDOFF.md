@@ -6,7 +6,7 @@ Start with [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-
 
 The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
 
-Real MT5 reads are diagnostic only. External or unknown exposure blocks candidates. Otherwise the real bridge returns `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`, with diagnostic failures for stale/invalid ticks, symbol properties and account identity/currency. Account snapshot freshness and reconciliation remain unverified. Only an explicit in-process mock in SIMULATION can use synthetic bridge evidence; HTTP input cannot select it.
+Real MT5 reads/checks are eligible only for proposal evidence through `sentinelfx.mt5.readonly-evidence.v1`. Missing, stale, mismatched, non-demo, exposed, or uncertain evidence returns `NO_TRADE`; a separately isolated exact-volume `order_check` is mandatory. HTTP input cannot select the adapter, identity, or evidence source.
 
 Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
 
@@ -36,7 +36,7 @@ Project root: the directory containing this file's parent `docs/` folder. Read `
 
 - `engine/webhook.py`: strict TradingView payload validation, age checks, idempotency and explicit symbol mapping.
 - `engine/mt5.py`: read/check wrapper with structured failures. `order_send()` must always return `LIVE_EXECUTION_NOT_IMPLEMENTED`.
-- `engine/bridge.py`: persists intake and diagnostics. Real adapters block; only explicit simulation mocks reach exact-volume order check and full risk re-evaluation.
+- `engine/bridge.py`: persists intake and diagnostics. Explicit simulation mocks and strictly validated isolated real snapshots can reach a non-submitting exact-volume check and final risk re-evaluation; every other real adapter blocks.
 - `engine/domain.py`: deterministic `RiskManager` and `PositionSizer`; vetoes cannot be overridden by scores or input lot sizes.
 - `engine/service.py`: persistent controls, duplicate checks, account/provider suspension, paper-position reservation, veto storage and audit logging.
 - `migrations/003_trading_bridge.sql`: webhook, mapping, snapshot, risk, paper trade, journal and veto tables.
@@ -50,7 +50,7 @@ Run the acceptance gate first:
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
 ```
 
-The current verified result after adding demo-monitor coverage is `181 tests` and `ACCEPTANCE RESULT: PASS`.
+The current verified result after Phase 2 read-only evidence coverage is `201 tests` and `ACCEPTANCE RESULT: PASS`.
 
 ```sh
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m unittest discover -s tests -v
@@ -92,4 +92,5 @@ The MT5 adapter is not enabled by the Mac launcher. Real news/macro feeds, exact
 - `server.py` exposes only `/api/demo-proposals/review`; the existing local Host/Origin and CSRF checks apply. There is no execution endpoint.
 - `static/app.js` adds the Demo proposals review page and permanent no-send warning.
 - Approval changes state only. `MT5Service.order_send()` still refuses and no new call site exists.
-- Real diagnostic snapshots remain ineligible because the isolated boundary does not yet expose verified order-check evidence. Do not weaken this to make a real proposal appear.
+- Phase 2 adds `sentinelfx.mt5.readonly-evidence.v1`: strict real snapshot validation plus a separately isolated, non-submitting exact-volume `order_check`. Evidence acquisition runs outside database write locks and the final proposal transaction recalculates risk against the checked volume. See `MT5_READ_ONLY_EVIDENCE_PROTOCOL.md`.
+- The implementation is fixture-tested but not yet reproduced against the intended Windows demo terminal. Do not claim execution readiness or weaken any failure to make a proposal appear.

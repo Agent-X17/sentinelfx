@@ -114,6 +114,7 @@ class MT5Service:
     def positions_get(self, **kwargs): return self._call("positions_get", **kwargs)
     def orders_get(self, **kwargs): return self._call("orders_get", **kwargs)
     def history_deals_get(self, date_from, date_to, **kwargs): return self._call("history_deals_get", date_from, date_to, **kwargs)
+    def history_orders_get(self, date_from, date_to, **kwargs): return self._call("history_orders_get", date_from, date_to, **kwargs)
     def copy_rates_range(self, symbol, timeframe, date_from, date_to): return self._call("copy_rates_range", symbol, timeframe, date_from, date_to)
     def order_calc_margin(self, action, symbol, volume, price): return self._call("order_calc_margin", action, symbol, volume, price)
     def order_calc_profit(self, action, symbol, volume, price_open, price_close): return self._call("order_calc_profit", action, symbol, volume, price_open, price_close)

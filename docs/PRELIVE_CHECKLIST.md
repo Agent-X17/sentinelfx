@@ -13,7 +13,7 @@ blocked. A future release needs independent design, implementation and review.
 | Dashboard examples and mock bridge approvals | Simulated only | Never use fictional history/costs/news as external evidence |
 | ACCOUNT_LIVE | Simulated only; $300 profile basis | Stable account identity, reconciled equity/currency/exposure, snapshot age, restart and manual-trade handling required |
 | Real MT5 reads and tick/property diagnostics | Implemented checks, fixture-tested only | Controlled demo-terminal tests with stale ticks, disconnects, restarts, account switches, invalid symbols and external exposure |
-| Native broker order-request translation | Missing | Typed requests; broker filling modes, sessions, precision, stop/freeze levels; demo validation with exact volume |
+| Native broker order-request translation | Read-only `order_check` implemented; fixture-tested | Reproduce on intended Windows demo host with filling modes, sessions, precision, stop/freeze levels and exact volume; submission remains absent |
 | Native diagnostic isolation and cancellation | Implemented on server: separate process, five-second timeout, busy block, no DB write lock during reads | Verify against intended terminal host; real approval still requires versioned reconciliation and recovery |
 | Broker entity serving Tanzania | Missing | Dated source documents stored and independently reviewed; user-specific serving entity confirmed |
 | Tanzania withdrawal/payment evidence | Manual record interface only | Actual evidence, amount/cost/time/method and independent review; no automatic approval from a checked box |
@@ -42,7 +42,9 @@ Stops model risk; they do not guarantee a fill or cap real gap losses.
 - [x] Short automatic expiry is implemented.
 - [x] Approval records future intent only and sends no order.
 - [x] Account identity and credential fields are redacted from proposal views and audits.
+- [x] Implement the versioned real isolated MT5 snapshot and non-submitting exact-volume order-check boundary.
+- [x] Add fixture coverage for demo identity, freshness, exposure, symbol microstructure, identity drift and strict failure behavior.
 - [ ] Verify the real isolated MT5 read-only order-check boundary on a supported Windows demo host.
-- [ ] Complete a fresh account reconciliation and prove snapshot freshness on that host.
+- [ ] Complete a fresh account reconciliation and prove snapshot freshness on that host using the manual procedure.
 - [ ] Conduct a separate security/code review before adding any manually confirmed execution path.
 - [ ] Implement and test a distinct one-order demo execution release; it does not exist here.

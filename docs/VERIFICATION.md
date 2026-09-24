@@ -8,7 +8,7 @@ The current authoritative gate is:
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
 ```
 
-Verified again on 2026-09-25: `ACCEPTANCE RESULT: PASS`; **193 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. The proposal tests cover disabled defaults, valid proposal creation, stale/mismatched/exposed evidence, replay, no-send approval, reject/cancel/expiry, one-active limit, CSRF, kill switch, audit completeness and secret redaction. See [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md) and [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md).
+Verified again on 2026-09-25 after the Phase 2 read-only evidence work: `ACCEPTANCE RESULT: PASS`; **201 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. Proposal/evidence tests cover disabled defaults, strict protocol validation, valid fixture-backed real proposal creation, stale/mismatched/non-demo/disconnected/exposed evidence, symbol microstructure, exact volume/stop constraints, replay, no-send approval, reject/cancel/expiry, one-active limit, CSRF, kill switch, audit completeness and secret redaction.
 
 Real Chromium automation is still blocked on this task host: Chrome exits before creating `DevToolsActivePort`, including with `--no-sandbox --disable-gpu`. The updated DOM fallback passed all eight pages, simulated open/close, webhook diagnostics, explicit block-source rendering, and no script errors. No visual-browser success is claimed.
 
@@ -61,4 +61,15 @@ The reproducible harness is tests/dashboard_dom.cjs. It was run with NODE_PATH p
 
 ## Limits
 
-No real MT5 terminal/broker connected. Native diagnostic timeout isolation and verified backup/restore are implemented. Full account/order reconciliation, native broker request translation, actual evidence adapters and production deployment controls still require engineering and verification. PostgreSQL is not implemented or required for local operation. Live submission remains disabled. This is not a connection-only or production-readiness sign-off; see SYSTEM_READINESS_REVIEW.md.
+No real MT5 terminal/broker was available on this Mac. The versioned isolated snapshot and native non-submitting `order_check` translation are implemented and fixture-tested, including timeout, busy, drift and strict failure behavior. They still require reproduction on the intended Windows demo host. PostgreSQL is not implemented or required for local operation. Live submission remains disabled. This is not an execution-readiness sign-off.
+
+## Phase 2 checks — 2026-09-25
+
+```sh
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B -m py_compile server.py manage.py engine/*.py tests/*.py
+node --check static/app.js
+```
+
+Results: acceptance PASS; 201 tests OK; Python compilation PASS; JavaScript syntax PASS. Source inspection found no submission operation in `engine/mt5_worker.py`; the only production `order_send` symbol remains the refusal in `engine/mt5.py`.

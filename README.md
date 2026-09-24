@@ -4,7 +4,7 @@
 
 The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
 
-Real MT5 reads are diagnostic only. External or unknown exposure blocks candidates. Otherwise the real bridge returns `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`, with diagnostic failures for stale/invalid ticks, symbol properties and account identity/currency. Account snapshot freshness and reconciliation remain unverified. Only an explicit in-process mock in SIMULATION can use synthetic bridge evidence; HTTP input cannot select it.
+Real MT5 reads/checks are proposal evidence only. A versioned isolated snapshot must prove fresh demo identity, terminal state, exact symbol facts, a fresh quote, and zero current/recent exposure; a second isolated `order_check` must accept the exact calculated volume. Any missing or uncertain field returns `NO_TRADE`. HTTP input cannot select the evidence source or MT5 identity.
 
 Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
 
@@ -152,7 +152,7 @@ export TRADINGVIEW_WEBHOOK_SECRET='a-long-random-secret'
 python3 -B server.py
 ```
 
-The real adapter remains diagnostic-only. It fails closed on disconnection, package or terminal unavailability, timeout, terminal-busy state, stale ticks, account drift, invalid symbols, unknown exposure, and existing positions or orders. Those states produce `NO_TRADE`; they never submit an order. The dashboard, `/status`, and `/api/health` show whether the current host and package meet the real-diagnostic prerequisites.
+The real adapter is read/check-only. For proposal creation it uses the versioned isolated protocol documented in [docs/MT5_READ_ONLY_EVIDENCE_PROTOCOL.md](docs/MT5_READ_ONLY_EVIDENCE_PROTOCOL.md). It fails closed on disconnection, package or terminal unavailability, timeout, terminal-busy state, stale snapshots/ticks, account drift, non-demo or mismatched identity, enabled terminal AutoTrading, invalid symbols or microstructure, unknown exposure, existing positions/orders, and recent external activity. Those states produce `NO_TRADE`; they never submit an order.
 
 The current MT5 runtime broker profile remains `RUNTIME_UNVERIFIED`. Connecting a terminal does not prove the exact legal entity serving Tanzania, withdrawal rails, commission, swap, news conditions or strategy edge. Those missing facts remain safety blockers for any future live release.
 
@@ -212,4 +212,4 @@ export DEMO_MAX_TRADES_PER_DAY=2
 
 Start the local server normally, open `http://127.0.0.1:8765/#proposals`, and inspect the proposal, account snapshot, sizing, vetoes, warnings, and history. Approve changes only the durable status to `APPROVED_FOR_FUTURE_DEMO_EXECUTION`; it does not call MT5 or create a paper position. Reject, cancel, and automatic expiry are also audited. All state-changing proposal actions require the local CSRF token and local Host/Origin checks.
 
-A proposal is refused when account identity is not configured or mismatched, the account is not confirmed as demo, the quote or account snapshot is stale, exposure exists, risk checks fail, the order check is unavailable, a proposal is already active, the daily count is reached, or the kill switch is active. Current real MT5 diagnostics remain read-only and fail closed until the isolated evidence path can provide a separately reviewed read-only order check.
+A proposal is refused when account identity is not configured or mismatched, the account is not confirmed as demo, terminal AutoTrading is not proven off, the quote or account snapshot is stale, current or recent external exposure exists, symbol restrictions are incomplete, risk checks fail, the isolated exact-volume order check fails, a proposal is already active, the daily count is reached, or the kill switch is active. Real MT5 evidence support is implemented but still requires manual verification on the intended Windows demo host.

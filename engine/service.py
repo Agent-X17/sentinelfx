@@ -91,7 +91,7 @@ class Application:
                 db.execute('UPDATE demo_trade_proposals SET status=?,updated_at=?,payload=? WHERE id=?',('EXPIRED',stamp(),dumps(value),row['id']))
                 self._proposal_history(db,row['id'],'EXPIRED',old,'EXPIRED','Automatic short-lived expiry')
 
-    def create_demo_proposal(self,raw_webhook_id,signal,decision,account_snapshot,evidence):
+    def create_demo_proposal(self,raw_webhook_id,signal,decision,account_snapshot,evidence,evaluation_payload=None,checked_volume=None):
         """Persist a review artifact only. This method has no MT5 dependency or send path."""
         settings=self.settings
         if not settings or not settings.demo_trade_proposals_enabled:
@@ -100,6 +100,19 @@ class Application:
             raise InvalidData('DEMO_TRADE_PROPOSALS_REQUIRE_SIMULATION_MODE')
         if settings.demo_trade_proposal_kill_switch:
             raise InvalidData('DEMO_TRADE_PROPOSAL_KILL_SWITCH_ACTIVE')
+        if evaluation_payload is not None:
+            profile=evaluation_payload.get('account_profile','ACCOUNT_LIVE'); raw=evaluation_payload.get('signal',{}); market=evaluation_payload.get('market',{})
+            with self.store.transaction() as db:
+                a=self.refresh(db,profile,raw.get('provider','')) if profile in PROFILES else {}
+                b=Store.get(db,'broker_profiles',evaluation_payload.get('broker_id','')) or {}; p=Store.get(db,'providers',raw.get('provider','')) or {}
+                policy=replace(self.engine.policy,risk_fraction=str(decimal(settings.demo_max_risk_per_trade_pct)/100),daily_fraction=str(decimal(settings.demo_max_daily_loss_pct)/100),max_positions=settings.demo_max_open_positions)
+                decision=DecisionEngine(policy).evaluate(profile,a,b,p,raw,market)
+                calculated=(decision.get('calculations') or {}).get('position_size')
+                try:
+                    exact=decimal(calculated)==decimal(checked_volume)
+                except (InvalidData,TypeError):
+                    exact=False
+                if not exact: raise InvalidData('MT5_ORDER_CHECK_VOLUME_MISMATCH')
         if decision.get('decision')!='APPROVED_SIMULATED_TRADE' or decision.get('blocking_factors'):
             raise InvalidData('RISK_ENGINE_DID_NOT_APPROVE_PROPOSAL')
         calculations=decision.get('calculations') or {}

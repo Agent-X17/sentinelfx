@@ -7,6 +7,8 @@ import time
 from datetime import datetime,timezone
 from pathlib import Path
 from .mt5 import MT5Result, MT5Service
+from .domain import InvalidData
+from .mt5_evidence import validate_order_check
 
 
 class SnapshotMT5:
@@ -26,6 +28,9 @@ class SnapshotMT5:
     def symbol_info_tick(self, symbol): return self._get('symbol_info_tick')
     def positions_get(self): return self._get('positions_get')
     def orders_get(self): return self._get('orders_get')
+    def terminal_info(self): return self._get('terminal_info')
+    def recent_deals(self): return self._get('recent_deals')
+    def recent_orders(self): return self._get('recent_orders')
 
 
 class IsolatedMT5Service(MT5Service):
@@ -48,8 +53,18 @@ class IsolatedMT5Service(MT5Service):
     def operational_state(self):
         return {'diagnostic_mode':'real' if self.enabled else 'disabled','last_diagnostic_at':self._last_diagnostic_at,
                 'last_failure_reason':self._last_failure_reason,'drift_latched':self._drift,
-                'account_reconciled':False,'snapshot_freshness':'UNVERIFIED','external_evidence_ready':False,
+                'account_reconciled':False,'snapshot_freshness':'VALIDATED_PER_REQUEST','external_evidence_ready':False,
                 'paper_connected_eligible':False}
+
+    def _worker(self,payload):
+        response=subprocess.run([sys.executable,'-B','-m','engine.mt5_worker'],
+            input=json.dumps({'terminal_path':self.terminal_path,**payload}),
+            cwd=str(Path(__file__).resolve().parent.parent),text=True,
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=self.timeout,check=True)
+        data=json.loads(response.stdout)
+        if not isinstance(data,dict) or not isinstance(data.get('status'),dict):
+            raise ValueError('Invalid worker output')
+        return data
 
     def snapshot(self,symbol=None):
         def failure(code,message):
@@ -61,13 +76,7 @@ class IsolatedMT5Service(MT5Service):
         try:
             if self._drift:
                 return failure('MT5_ACCOUNT_CHANGED','Account identity drift is latched; review and restart required')
-            response=subprocess.run([sys.executable,'-B','-m','engine.mt5_worker'],
-                input=json.dumps({'terminal_path':self.terminal_path,'symbol':symbol}),
-                cwd=str(Path(__file__).resolve().parent.parent),text=True,
-                stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=self.timeout,check=True)
-            data=json.loads(response.stdout)
-            if not isinstance(data,dict) or not isinstance(data.get('status'),dict):
-                raise ValueError('Invalid worker output')
+            data=self._worker({'operation':'snapshot','symbol':symbol})
             account=(data.get('account_info') or {}).get('data') or {}
             identity=(account.get('login'),account.get('server'),account.get('currency'))
             if data['status'].get('code') == 'MT5_ACCOUNT_CHANGED' or (
@@ -81,6 +90,31 @@ class IsolatedMT5Service(MT5Service):
             return failure('MT5_TIMEOUT','Diagnostic worker exceeded its deadline and was terminated')
         except (subprocess.SubprocessError,OSError,ValueError,TypeError,AttributeError):
             return failure('MT5_WORKER_FAILED','Diagnostic worker failed; no account state imported')
+        finally:
+            self._lock.release()
+
+    def read_only_order_check(self,request):
+        """Run one isolated order_check and return validated non-submitting evidence."""
+        if not self.enabled:
+            return MT5Result(False,'MT5_DISABLED','MT5 integration is disabled')
+        if not self._lock.acquire(blocking=False):
+            return MT5Result(False,'MT5_BUSY','Another read-only MT5 operation is in progress')
+        try:
+            if self._drift or self._identity is None:
+                return MT5Result(False,'MT5_ACCOUNT_IDENTITY_UNVERIFIED','A verified snapshot is required before order_check')
+            data=self._worker({'operation':'order_check','request':request})
+            identity=data.get('account_identity') or {}
+            if (identity.get('login'),identity.get('server'),identity.get('currency')) != self._identity:
+                self._drift=True
+                return MT5Result(False,'MT5_ACCOUNT_CHANGED','Account identity changed before order_check')
+            safe=validate_order_check(data,request.get('volume'))
+            return MT5Result(True,'MT5_ORDER_CHECK_PASSED','Broker accepted the non-submitting order check',safe)
+        except subprocess.TimeoutExpired:
+            return MT5Result(False,'MT5_TIMEOUT','Read-only order check exceeded its deadline')
+        except InvalidData as exc:
+            return MT5Result(False,str(exc),'Read-only order check evidence was rejected')
+        except (subprocess.SubprocessError,OSError,ValueError,TypeError,AttributeError):
+            return MT5Result(False,'MT5_WORKER_FAILED','Read-only order check worker failed')
         finally:
             self._lock.release()
 
