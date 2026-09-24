@@ -1,5 +1,7 @@
 # SentinelFX — Full Project Truth Report
 
+> **Current update:** Read [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md) first. It records the latest 181-test acceptance pass plus the manually verified TradingView delivery and Mac MT5 demo monitor. It supersedes older runtime and test counts below.
+
 Report date: 2026-09-24  
 Project folder: `/Users/princebenny/Documents/Codex/2026-09-21/referenced-chatgpt-conversation-this-is-an-2/outputs/forex-engine`  
 Review archive: `/Users/princebenny/Documents/Codex/2026-09-21/referenced-chatgpt-conversation-this-is-an-2/outputs/sentinelfx.zip`

@@ -1,5 +1,7 @@
 # Independent agent handoff
 
+Start with [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md). It records the latest repository acceptance result plus the manually verified TradingView delivery and Mac MT5 demo-monitor progress. It supersedes older runtime and test counts in historical reports.
+
 ## Execution and evidence boundary
 
 The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
@@ -48,7 +50,7 @@ Run the acceptance gate first:
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
 ```
 
-The current verified result is `176 tests` and `ACCEPTANCE RESULT: PASS`.
+The current verified result after adding demo-monitor coverage is `181 tests` and `ACCEPTANCE RESULT: PASS`.
 
 ```sh
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m unittest discover -s tests -v

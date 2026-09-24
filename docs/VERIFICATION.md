@@ -8,7 +8,7 @@ The current authoritative gate is:
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
 ```
 
-Verified result: `ACCEPTANCE RESULT: PASS`; **176 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. See [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md).
+Verified again on 2026-09-25: `ACCEPTANCE RESULT: PASS`; **181 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. The added tests cover the separate read-only Mac MT5 demo monitor. See [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md) and [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md).
 
 Real Chromium automation is still blocked on this task host: Chrome exits before creating `DevToolsActivePort`, including with `--no-sandbox --disable-gpu`. The updated DOM fallback passed all eight pages, simulated open/close, webhook diagnostics, explicit block-source rendering, and no script errors. No visual-browser success is claimed.
 

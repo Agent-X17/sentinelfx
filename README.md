@@ -10,7 +10,7 @@ Webhook credential fields are recursively filtered, including nested lists; know
 
 Real diagnostics are collected outside the SQLite write transaction. The server uses a separate diagnostic process with a five-second deadline and one active worker; timeout/failure/busy states block candidates. Intake is then revalidated and deduplicated inside an atomic transaction. Mock paper reservation, journal and audit still commit or roll back together. This remains a local single-user prototype; real execution and reconciliation are not implemented.
 
-See the [under-five-minute quick start](docs/QUICKSTART.md), [the review report](docs/FULL_PROJECT_REPORT.md), and [future release checklist](docs/PRELIVE_CHECKLIST.md).
+See the [current progress report](docs/CURRENT_PROGRESS_REPORT_2026-09-25.md), [under-five-minute quick start](docs/QUICKSTART.md), [historical full review](docs/FULL_PROJECT_REPORT.md), and [future release checklist](docs/PRELIVE_CHECKLIST.md).
 
 Current release gate: [OPERATIONAL_ACCEPTANCE.md](docs/OPERATIONAL_ACCEPTANCE.md).
 The automated suite is the source of truth for the current test count. This is ready for local simulation/diagnostic evaluation, not
