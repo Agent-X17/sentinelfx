@@ -28,6 +28,14 @@ from engine.redaction import redact
 
 ROOT=Path(__file__).resolve().parent
 
+def mt5_host_capabilities():
+    package_available=importlib.util.find_spec('MetaTrader5') is not None
+    windows_host=sys.platform.startswith('win')
+    return {'platform':sys.platform,'package_available':package_available,'windows_supported_host':windows_host,
+        'real_diagnostics_prerequisites_met':package_available and windows_host,
+        'recommended_host':'Windows with the official MetaTrader5 Python package, running MT5 terminal, and demo-only login',
+        'reason':'Available for configuration' if package_available and windows_host else 'This host does not meet the real MT5 diagnostic prerequisites'}
+
 def seed_demo_activity(application):
     """Add clearly labelled synthetic decisions to a brand-new demo database."""
     for profile,scenario in (('ACCOUNT_A','safe'),('ACCOUNT_B','standard'),('ACCOUNT_C','stale')):
@@ -37,11 +45,13 @@ def seed_demo_activity(application):
 def status_document(settings,mt5,port):
     state=mt5.status().to_dict() if mt5 else {'ok':False,'code':'MT5_UNCONFIGURED','message':'MT5 status unavailable'}
     operational=mt5.operational_state() if mt5 and hasattr(mt5,'operational_state') else {}
+    host=mt5_host_capabilities()
     allowed=', '.join(settings.webhook_allowed_hosts) or 'localhost only'
     rows=(('System mode',settings.mode),('Database',str(Path(settings.database_path).resolve())),('Dashboard',f'http://127.0.0.1:{port}/'),
           ('TradingView webhook',f'http://127.0.0.1:{port}/api/webhook/tradingview'),('Webhook secret','configured' if settings.webhook_secret else 'not configured'),
           ('Accepted external hosts',allowed),('MT5 diagnostic mode',settings.mt5_diagnostic_mode),('MT5 status',state['code']),
           ('Last diagnostic',operational.get('last_diagnostic_at') or 'none'),('Drift latch','ACTIVE' if operational.get('drift_latched') else 'clear'),
+          ('MetaTrader5 package','installed' if host['package_available'] else 'not installed'),('Real MT5 host support','available' if host['real_diagnostics_prerequisites_met'] else 'not available on this host'),
           ('Paper-connected eligibility','NOT ELIGIBLE'),('Live execution','DISABLED — not implemented'))
     body=''.join(f'<tr><th>{escape(k)}</th><td>{escape(str(v))}</td></tr>' for k,v in rows)
     return ("<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
@@ -101,12 +111,13 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                 runtime={'dashboard_url':f'http://127.0.0.1:{self.server.server_port}/','status_url':f'http://127.0.0.1:{self.server.server_port}/status','webhook_path':'/api/webhook/tradingview','local_webhook_url':f'http://127.0.0.1:{self.server.server_port}/api/webhook/tradingview'}
                 mt5_status=mt5.status().to_dict() if mt5 else None
                 operational=mt5.operational_state() if mt5 and hasattr(mt5,'operational_state') else {}
+                host_capabilities=mt5_host_capabilities()
                 if path=='/api/state':
                     snapshot=app.snapshot(); diagnostics=webhook_diagnostics(snapshot)
-                    return self.send(200,dict(snapshot,csrf_token=token,mt5=mt5_status,mt5_operational=operational,settings=(settings.public() if settings else None),runtime=runtime,
+                    return self.send(200,dict(snapshot,csrf_token=token,mt5=mt5_status,mt5_operational=operational,mt5_host_capabilities=host_capabilities,settings=(settings.public() if settings else None),runtime=runtime,
                         webhook_diagnostics=diagnostics,last_webhook_result=diagnostics[0] if diagnostics else None,last_safe_state_at=snapshot['audit'][0]['timestamp'] if snapshot.get('audit_integrity') and snapshot.get('audit') else None,
                         readiness={'simulation':'READY','diagnostic':'SYNTHETIC' if settings and settings.mt5_diagnostic_mode=='mock' else 'DIAGNOSTIC_ONLY','account_reconciliation':'UNVERIFIED','snapshot_freshness':operational.get('snapshot_freshness','UNVERIFIED'),'external_evidence':'NOT_READY','paper_connected':'NOT_ELIGIBLE','live_execution':'UNAVAILABLE'}))
-                if path=='/api/health': return self.send(200,{'ok':True,'mode':settings.mode if settings else 'SIMULATION','live_execution_enabled':False,'database_path':str(Path(settings.database_path).resolve()) if settings else None,'mt5_diagnostic_mode':settings.mt5_diagnostic_mode if settings else 'disabled','mt5':mt5_status,'mt5_operational':operational,'webhook':runtime})
+                if path=='/api/health': return self.send(200,{'ok':True,'mode':settings.mode if settings else 'SIMULATION','live_execution_enabled':False,'database_path':str(Path(settings.database_path).resolve()) if settings else None,'mt5_diagnostic_mode':settings.mt5_diagnostic_mode if settings else 'disabled','mt5':mt5_status,'mt5_operational':operational,'mt5_host_capabilities':host_capabilities,'webhook':runtime})
                 if path=='/api/mt5/status': return self.send(200,mt5.status().to_dict() if mt5 else {'ok':False,'code':'MT5_UNCONFIGURED'})
                 if path=='/status': return self.send(200,status_document(settings,mt5,self.server.server_port),'text/html; charset=utf-8')
                 if path=='/api/candle-sample': return self.send(200,json.loads((ROOT/'examples/synthetic-candles.json').read_text()))
@@ -232,8 +243,9 @@ def main():
     print(f'  Database:        {Path(settings.database_path).resolve()}',flush=True)
     print(f'  System mode:     {settings.mode}',flush=True)
     print(f'  MT5 diagnostics: {settings.mt5_diagnostic_mode}',flush=True)
-    native_available=importlib.util.find_spec('MetaTrader5') is not None
-    print(f'  MT5 host check:  {"package detected" if native_available else "package unavailable on this host"}',flush=True)
+    host_capabilities=mt5_host_capabilities()
+    print(f'  MT5 host check:  {"real diagnostic prerequisites met" if host_capabilities["real_diagnostics_prerequisites_met"] else "real diagnostics unavailable on this host"}',flush=True)
+    print(f'  MT5 package:     {"installed" if host_capabilities["package_available"] else "not installed"}',flush=True)
     print('  Live execution:  DISABLED (not implemented)',flush=True)
     print(f'  Webhook:         http://127.0.0.1:{server.server_port}/api/webhook/tradingview\n',flush=True)
     print(f'  Webhook secret:  {"configured" if settings.webhook_secret else "NOT configured (localhost testing only)"}',flush=True)

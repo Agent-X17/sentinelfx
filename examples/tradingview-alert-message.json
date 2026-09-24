@@ -1,0 +1,15 @@
+{
+  "secret": "PASTE_NEW_WEBHOOK_ONLY_SECRET",
+  "alert_id": "tv-{{exchange}}-{{ticker}}-{{interval}}-{{timenow}}",
+  "symbol": "{{exchange}}:{{ticker}}",
+  "side": "BUY",
+  "timeframe": "{{interval}}",
+  "strategy": "manual-diagnostic-v1",
+  "timestamp": "{{timenow}}",
+  "entry": "{{close}}",
+  "stop_loss": "1.09800",
+  "take_profit": "1.10400",
+  "metadata": {
+    "purpose": "diagnostic-only TradingView delivery test"
+  }
+}

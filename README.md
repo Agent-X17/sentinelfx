@@ -133,25 +133,26 @@ For an authenticated or tunneled instance, add `--secret "$TRADINGVIEW_WEBHOOK_S
 
 Missing or stale timestamps, missing stops, invalid numbers, unknown or ambiguous symbols, duplicate IDs, unavailable MT5 state and every risk violation return a structured `NO_TRADE` or blocked response.
 
-## Optional MT5 validation
+## MT5 diagnostic setup
 
-Choose one diagnostic mode. `mock` is synthetic and works locally; it exercises the same intake and diagnostic presentation but can never satisfy the external-evidence gate:
+Choose `disabled`, `mock`, or `real`. `mock` is visibly synthetic and works locally; it exercises the same intake and diagnostic presentation but can never satisfy the external-evidence gate:
 
 ```sh
 MT5_DIAGNOSTIC_MODE=mock python3 -B server.py --demo --port-fallback
 ```
 
-On a supported MT5 host, set:
+Real diagnostics are unavailable on this Mac because the official `MetaTrader5` Python package and supported terminal host are absent. Use a controlled Windows machine with the official package, a running MT5 terminal, and a **demo-only login**. Do not provide funded-account credentials. On that diagnostic host, set:
 
 ```sh
-export SYSTEM_MODE=PAPER_TRADING
+export SYSTEM_MODE=SIMULATION
+export LIVE_EXECUTION_ENABLED=false
 export MT5_DIAGNOSTIC_MODE=real
 export MT5_TERMINAL_PATH='/path/to/terminal'
 export TRADINGVIEW_WEBHOOK_SECRET='a-long-random-secret'
 python3 -B server.py
 ```
 
-The official MetaTrader5 Python integration and an initialized terminal must be installed on the host running this adapter. The normal Mac launcher intentionally does not install or configure a terminal. A common future deployment is to keep the dashboard/control service separate and run the MT5 adapter on a controlled Windows host.
+The real adapter remains diagnostic-only. It fails closed on disconnection, package or terminal unavailability, timeout, terminal-busy state, stale ticks, account drift, invalid symbols, unknown exposure, and existing positions or orders. Those states produce `NO_TRADE`; they never submit an order. The dashboard, `/status`, and `/api/health` show whether the current host and package meet the real-diagnostic prerequisites.
 
 The current MT5 runtime broker profile remains `RUNTIME_UNVERIFIED`. Connecting a terminal does not prove the exact legal entity serving Tanzania, withdrawal rails, commission, swap, news conditions or strategy edge. Those missing facts remain safety blockers for any future live release.
 

@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ from engine.domain import stamp
 from engine.isolated_mt5 import IsolatedMT5Service,MockDiagnosticMT5Service
 from engine.service import Application
 from engine.webhook import SymbolMapper,TradingViewWebhookService,WebhookAuthenticator
-from server import seed_demo_activity,status_document,webhook_diagnostics
+from server import seed_demo_activity,status_document,webhook_diagnostics,mt5_host_capabilities
 
 
 class OperatorTests(unittest.TestCase):
@@ -61,6 +62,21 @@ class OperatorTests(unittest.TestCase):
         rows=webhook_diagnostics(snapshot)
         self.assertEqual(rows[0]['replay_status'],'DUPLICATE')
         self.assertEqual(rows[1]['secret_validation'],'FAILED')
+
+    def test_host_capabilities_never_claim_real_support_without_both_requirements(self):
+        capabilities=mt5_host_capabilities()
+        self.assertEqual(capabilities['real_diagnostics_prerequisites_met'],capabilities['package_available'] and capabilities['windows_supported_host'])
+        self.assertIn('demo-only login',capabilities['recommended_host'])
+
+    def test_tradingview_template_is_valid_and_contains_no_broker_credentials(self):
+        path=Path(__file__).resolve().parents[1]/'examples'/'tradingview-alert-message.json'
+        raw=path.read_text()
+        template=json.loads(raw)
+        self.assertEqual(template['symbol'],'{{exchange}}:{{ticker}}')
+        self.assertEqual(template['timestamp'],'{{timenow}}')
+        self.assertEqual(template['entry'],'{{close}}')
+        self.assertTrue({'secret','alert_id','side','stop_loss','take_profit'} <= set(template))
+        self.assertFalse({'login','password','broker_password','api_key'} & set(template))
 
 
 if __name__=='__main__': unittest.main()
