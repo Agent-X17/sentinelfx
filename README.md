@@ -141,7 +141,7 @@ Choose `disabled`, `mock`, or `real`. `mock` is visibly synthetic and works loca
 MT5_DIAGNOSTIC_MODE=mock python3 -B server.py --demo --port-fallback
 ```
 
-Real diagnostics are unavailable on this Mac because the official `MetaTrader5` Python package and supported terminal host are absent. Use a controlled Windows machine with the official package, a running MT5 terminal, and a **demo-only login**. Do not provide funded-account credentials. On that diagnostic host, set:
+Real diagnostics are unavailable on this Mac because the official `MetaTrader5` Python package and supported terminal host are absent. Use a controlled Windows machine with the official package, a running MT5 terminal, and a **demo-only login**. Do not provide funded-account credentials. Follow the plain-English [Windows MT5 demo verification guide](docs/WINDOWS_MT5_DEMO_VERIFICATION_GUIDE.md). On that diagnostic host, set:
 
 ```sh
 export SYSTEM_MODE=SIMULATION

@@ -74,8 +74,9 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(InvalidData,'STOP_LEVEL'): validate_order_request(value,{**valid,'sl':'1.10000'})
     def test_worker_source_has_no_submission_operation(self):
         from pathlib import Path
-        source=(Path(__file__).parent.parent/'engine'/'mt5_worker.py').read_text()
-        self.assertNotIn('order_'+'send',source)
+        root=Path(__file__).parent.parent
+        for path in (root/'engine'/'mt5_worker.py',root/'scripts'/'verify_mt5_readonly.py'):
+            self.assertNotIn('order_'+'send',path.read_text())
 
 
 class VerifiedProposalIntegrationTests(unittest.TestCase):
