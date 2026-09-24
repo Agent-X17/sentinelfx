@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime,timezone
 from pathlib import Path
@@ -14,10 +15,10 @@ from urllib.request import Request,urlopen
 
 ROOT=Path(__file__).resolve().parent.parent
 STAMP=datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
-RUN_DIR=Path(tempfile.gettempdir())/('sentinelfx-acceptance-'+STAMP)
+RUN_DIR=Path(tempfile.mkdtemp(prefix='sentinelfx-acceptance-'))
 DB=RUN_DIR/('demo-'+STAMP+'.sqlite3')
+READY=RUN_DIR/'server-ready.json'
 SECRET='acceptance-only-secret-abcdefghijklmnopqrstuvwxyz'
-RUN_DIR.mkdir()
 server=None
 
 def passed(label,detail=''):
@@ -41,20 +42,42 @@ try:
         DEFAULT_ACCOUNT_PROFILE='ACCOUNT_LIVE',EXPLICIT_ORDER_CONFIRMATION_REQUIRED='true',
         DEMO_TRADE_PROPOSALS_ENABLED='false',DEMO_TRADE_PROPOSAL_KILL_SWITCH='true',
         DEMO_EXPECTED_ACCOUNT_LOGIN='',DEMO_EXPECTED_BROKER_SERVER='')
-    command=[sys.executable,'-B','server.py','--demo','--db',str(DB),'--port','0']
-    server=subprocess.Popen(command,cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    lines=[];base=None
+    command=[sys.executable,'-B','server.py','--demo','--db',str(DB),'--port','0','--ready-file',str(READY)]
+    server=subprocess.Popen(command,cwd=ROOT,env=env,text=True,encoding='utf-8',errors='replace',bufsize=1,
+                            stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    lines=[]
+    def collect_output():
+        for line in server.stdout:
+            line=line.rstrip()
+            lines.append(line)
+            print('SERVER '+line,flush=True)
+    output_thread=threading.Thread(target=collect_output,daemon=True)
+    output_thread.start()
+    ready=None
     deadline=time.time()+15
     while time.time()<deadline:
-        line=server.stdout.readline()
-        if line:
-            lines.append(line.rstrip());print('SERVER '+line.rstrip())
-            match=re.search(r'Dashboard:\s+(http://127\.0\.0\.1:\d+)/',line)
-            if match:base=match.group(1)
-            if line.strip().startswith('4. Inspect'):break
-        elif server.poll() is not None:break
+        if READY.exists():
+            try:
+                ready=json.loads(READY.read_text(encoding='utf-8'))
+                break
+            except (OSError,json.JSONDecodeError):
+                pass
+        if server.poll() is not None:break
+        time.sleep(0.05)
+    if ready:
+        output_deadline=time.time()+2
+        while time.time()<output_deadline and not any(line.strip().startswith('4. Inspect') for line in lines):
+            if server.poll() is not None:break
+            time.sleep(0.02)
     startup='\n'.join(lines)
-    if not base:fail('server startup','dashboard URL was not printed')
+    if not ready:
+        detail='server exited '+str(server.poll()) if server.poll() is not None else 'readiness timed out'
+        if startup:detail+='; output: '+startup[-2000:]
+        fail('server startup',detail)
+    base=str(ready.get('dashboard_url','')).rstrip('/')
+    if not re.fullmatch(r'http://127\.0\.0\.1:\d+',base):fail('server startup','invalid readiness URL')
+    if ready.get('database_path')!=str(DB.resolve()) or ready.get('system_mode')!='SIMULATION' or ready.get('mt5_diagnostic_mode')!='mock' or ready.get('live_execution_enabled') is not False:
+        fail('server readiness',str(ready))
     for expected in (str(DB.resolve()),'System mode:     SIMULATION','MT5 diagnostics: mock','Live execution:  DISABLED',base,
                      'Webhook secret:  configured','Allowed hosts:   localhost only','python3 -B scripts/test_webhook.py'):
         if expected not in startup:fail('startup output','missing '+expected)

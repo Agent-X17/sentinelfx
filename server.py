@@ -221,7 +221,7 @@ def bind_server(application, port, bridge, mt5, settings, fallback=False):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--db');parser.add_argument('--policy');parser.add_argument('--port-fallback',action='store_true');parser.add_argument('--demo',action='store_true',help='create a fresh database with synthetic example decisions')
+    parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--db');parser.add_argument('--policy');parser.add_argument('--port-fallback',action='store_true');parser.add_argument('--demo',action='store_true',help='create a fresh database with synthetic example decisions');parser.add_argument('--ready-file',help=argparse.SUPPRESS)
     args=parser.parse_args()
     if args.demo:
         if args.db:
@@ -259,6 +259,18 @@ def main():
     print(f'  2. Check status:   http://127.0.0.1:{server.server_port}/status',flush=True)
     print(f'  3. Test webhook:   python3 -B scripts/test_webhook.py --url http://127.0.0.1:{server.server_port}/api/webhook/tradingview{secret_arg}',flush=True)
     print('  4. Inspect Overview, Signal decisions, and Audit trail.\n',flush=True)
+    if args.ready_file:
+        ready_path=Path(args.ready_file)
+        temporary=ready_path.with_name(ready_path.name+'.tmp')
+        temporary.write_text(json.dumps({
+            'dashboard_url':f'http://127.0.0.1:{server.server_port}/',
+            'status_url':f'http://127.0.0.1:{server.server_port}/status',
+            'database_path':str(Path(settings.database_path).resolve()),
+            'system_mode':settings.mode,
+            'mt5_diagnostic_mode':settings.mt5_diagnostic_mode,
+            'live_execution_enabled':False,
+        }),encoding='utf-8')
+        temporary.replace(ready_path)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close();mt5.shutdown()
