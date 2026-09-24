@@ -1,16 +1,17 @@
 # SentinelFX — Small Capital Forex Research & Risk Engine
 
-## Current safety review — supersedes earlier connected-workflow descriptions
+## Execution and evidence boundary
 
-- Real MT5 candidates now return NO_TRADE with REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED. Verified provider history, costs, news/macro context and account reconciliation are absent; connection alone cannot grant approval.
-- Only an explicitly constructed in-process MockMT5Service in SIMULATION may use the synthetic bridge fixture. The server never constructs that adapter, and webhook fields cannot select it. Existing dashboard simulation exercises still work.
-- Broker/account reads on the real bridge are diagnostic only; real account equity is not imported into the simulated ledger. ACCOUNT_LIVE retains its seeded simulation balance. Its risk calculation remains conservatively capped at the configured $300 profile basis.
-- Auth failures use independent audit IDs and cannot reserve valid alert identities. Alert IDs take precedence over delivery headers. The top-level secret is removed even when an authentication header is also present. Do not put credentials in arbitrary metadata.
-- All bridge database changes, including paper reservation, journal and audit, commit or roll back together. A process failure rolls back the candidate; retrying the alert is safe. SQLite holds its write lock during adapter calls, so a slow terminal can delay local requests. This is a local correctness measure, not a scalable deployment architecture.
-- Terminal connection is rechecked on each real adapter operation. Namedtuple records retain their fields; numeric returns are preserved; false operations and nonzero/missing order-check return codes fail.
-- Account-wide external positions and pending orders block candidates. Full terminal reconciliation, currency conversion, tick freshness validation, request translation and reconnect recovery remain future work. The unconditional real-evidence gate prevents approval until those integrations are reviewed.
-- Raw intake rows show final blocked/processed status. Legacy audit and research records are preserved as historical data; they do not establish verified external evidence.
-- No schema files or supplied prompt files were changed. Live order submission remains disabled.
+The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
+
+Real MT5 reads are diagnostic only. External or unknown exposure blocks candidates. Otherwise the real bridge returns `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`, with diagnostic failures for stale/invalid ticks, symbol properties and account identity/currency. Account snapshot freshness and reconciliation remain unverified. Only an explicit in-process mock in SIMULATION can use synthetic bridge evidence; HTTP input cannot select it.
+
+Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
+
+Intake, paper reservation, journal and audit commit or roll back together. SQLite holds its write lock during adapter calls. Native-call timeouts and worker isolation are missing; a slow terminal can block writes. This remains a local single-user prototype.
+
+See [the review report](docs/FULL_PROJECT_REPORT.md) and [future release checklist](docs/PRELIVE_CHECKLIST.md) for verification and remaining work.
+
 
 SentinelFX is a working local decision-control application for small Forex accounts. It receives TradingView-style alerts, normalizes them, checks current MetaTrader 5 account and symbol facts when MT5 is enabled, applies deterministic risk rules, and records a paper/simulation decision with an audit trail.
 
@@ -30,7 +31,7 @@ The default mode is `SIMULATION`. Live order submission is not implemented: `MT5
 
 ## Start locally on a Mac
 
-Double-click `Start SentinelFX.command`, keep its Terminal window open, and visit [http://127.0.0.1:8765](http://127.0.0.1:8765).
+Double-click `Start SentinelFX.command`, keep its Terminal window open, and open the localhost address printed in Terminal. It normally uses port 8765; if occupied, the launcher chooses an available port.
 
 Or run:
 
@@ -62,8 +63,8 @@ python3 -B manage.py backtest --input examples/synthetic-candles.json
 | Mode | MT5 required | Behavior |
 |---|---:|---|
 | `DISCONNECTED` | No | Dashboard/research available; webhook candidates stop. |
-| `SIMULATION` | No | Default local simulator. An enabled MT5 adapter can validate broker facts, but no order can be sent. |
-| `PAPER_TRADING` | Yes | Requires an MT5 connection; decisions remain paper records. |
+| `SIMULATION` | No | Default local simulator. An enabled MT5 adapter provides diagnostics; real candidates remain blocked. |
+| `PAPER_TRADING` | Yes | Requires MT5 enabled; real candidates remain blocked, not paper-approved. |
 | `LIVE_DISABLED` | Yes | Connected validation mode with live submission still unavailable. |
 | `LIVE_GATED` | N/A | Startup is refused in this release. |
 

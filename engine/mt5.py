@@ -119,7 +119,7 @@ class MT5Service:
     def order_calc_profit(self, action, symbol, volume, price_open, price_close): return self._call("order_calc_profit", action, symbol, volume, price_open, price_close)
     def order_check(self, request):
         result = self._call('order_check', request)
-        if result.ok and (not isinstance(result.data, dict) or result.data.get('retcode') != 0):
+        if result.ok and (not isinstance(result.data, dict) or type(result.data.get('retcode')) is not int or result.data['retcode'] != 0):
             return MT5Result(False, 'MT5_ORDER_CHECK_FAILED', 'Broker rejected or did not confirm order check', result.data)
         return result
 

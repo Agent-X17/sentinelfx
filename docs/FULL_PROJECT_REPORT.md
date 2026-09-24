@@ -153,7 +153,7 @@ Implements:
 - alert-ID-first idempotency;
 - HMAC constant-time shared-secret comparison.
 
-A top-level JSON `secret` is removed before bridge persistence. Arbitrary nested metadata is not automatically scrubbed; users must never put credentials in metadata.
+A top-level JSON `secret` is removed. Nested credential-like fields and known authentication-secret strings are filtered before webhook persistence and audit. Free text under arbitrary keys is not guaranteed secret-free; do not put credentials in metadata.
 
 ### MT5 adapter
 
@@ -249,9 +249,9 @@ Implements:
 - research/backtest/withdrawal endpoints;
 - no live execution endpoint.
 
-Webhook domain rejections currently return HTTP 200 with a structured rejected/NO_TRADE body. This is useful for alert delivery acknowledgement but may be undesirable for production monitoring. Authentication failure also returns HTTP 200. A future public ingress should define explicit response-code semantics.
+Webhook authentication failure returns 401, malformed input 400, stale/unmapped input 422, duplicates 409, and processed diagnostic/risk blocks 200 with NO_TRADE. HTTP acceptance never means order approval. See API.md.
 
-The server has no TLS, user accounts, sessions suitable for a network service, reverse-proxy trust configuration, rate limiting, request timeouts, metrics or production logging.
+The server has no TLS, user accounts, sessions suitable for a network service, reverse-proxy trust configuration, rate limiting, native-call timeouts, metrics or production logging. HTTP socket inactivity is bounded at 10 seconds.
 
 ### Dashboard
 
@@ -410,88 +410,15 @@ No schema migration was added for this hardening pass.
 
 ## 9. Testing truth
 
-Latest full-suite command:
-
-```sh
-PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m unittest discover -s tests -v
-```
-
-Latest recorded result:
-
-- 125 tests passed;
-- 0 failures;
-- 0 errors;
-- runtime: 2.737 seconds in the recorded run.
-
-This consists of 109 prior tests plus 16 hardening regression tests.
-
-Additional successful checks:
-
-```sh
-node --check static/app.js
-PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m py_compile server.py manage.py engine/*.py tests/*.py
-```
-
-Coverage includes:
-
-- Decimal risk/sizing invariants;
-- all profiles;
-- invalid stops and prices;
-- broker minimums;
-- costs and spread;
-- margin;
-- stale/future data;
-- loss caps;
-- provider suspension/review;
-- duplicate and concurrent signals;
-- audit integrity and rollback;
-- migrations and retained database upgrade;
-- HTTP host/origin/CSRF/path controls;
-- backtests and no-lookahead behavior;
-- webhook auth/freshness/mapping;
-- MT5 unavailable/restricted/check failures;
-- exact checked volume;
-- real-evidence block;
-- account-wide external exposure;
-- atomic bridge rollback;
-- secret redaction;
-- live-setting refusal;
-- unconditional order-send refusal.
-
-Tests are strong evidence for implemented deterministic behavior. They are not evidence of live broker compatibility, profitability, operational resilience or production security.
+The current review passes **142 tests**, including all 125 baseline tests and 17 new pre-live regressions. Exact commands and runtime evidence are in [VERIFICATION.md](VERIFICATION.md). These test deterministic local behavior, not broker fills, profitability or production security.
 
 ## 10. Runtime verification truth
 
-A clean `server.py` subprocess was launched using:
+A fresh `/tmp/sentinelfx-final-prelive.sqlite3` instance started on port 8877 with SIMULATION and MT5/live disabled. Root, JavaScript, CSS, health and state returned 200; audit integrity and migrations 1–3 passed. No live endpoint exists (404). Separate actual startup processes refused both live-enabled configuration and LIVE_GATED with exit code 1.
 
-- fresh temporary SQLite database;
-- `SYSTEM_MODE=SIMULATION`;
-- `MT5_ENABLED=false`;
-- `LIVE_EXECUTION_ENABLED=false`;
-- a test-only webhook secret;
-- OS-selected port 54191.
+Actual Chromium browser verification is blocked by the macOS sandbox: `bootstrap_check_in ... Permission denied (1100)`. Agent-browser and an independent downloaded headless Chromium both failed before page load. Do not claim a browser visual/accessibility pass. See VERIFICATION.md for separate DOM-harness results and their limits.
 
-Verified over HTTP:
-
-| Check | Result |
-|---|---|
-| `GET /` | 200 |
-| `GET /app.js` | 200 |
-| `GET /api/health` | 200 |
-| `GET /api/state` | 200; audit valid |
-| Valid authenticated webhook | 200; blocked with `MT5_DISABLED` |
-| Missing-stop webhook | 200; malformed |
-| Wrong-secret webhook | 200; `WEBHOOK_AUTH_FAILED` |
-| Fresh migrations | `[1, 2, 3]` |
-| Top-level secret redaction | verified |
-| `order_send()` | refused |
-| live configuration | refused |
-
-That clean server was deliberately terminated after verification.
-
-Automated browser visual verification did not complete. The `agent-browser` executable was unavailable, and an attempted headless Chrome process was terminated by the task sandbox. HTTP loading, HTML content, JavaScript syntax and HTTP integration were verified. There is no honest basis for claiming a current pixel-level or full interactive browser pass.
-
-At the later screenshot diagnosis, Python processes were listening on ports 8765 and 8766, but their health was not established. The user’s screenshot was definitely a `file://` page, not a server response. The launcher always requests port 8765 and does not automatically recover from a stale listener.
+The launcher now optionally falls back from occupied port 8765 to an available localhost port. Open the printed URL; direct file opening is unsupported.
 
 ## 11. Live-execution boundary
 
@@ -516,7 +443,7 @@ This project is incapable of live order submission in its current form.
 - No real MT5 terminal was used for the recorded verification.
 - No real broker account was connected.
 - Native MT5 request translation is incomplete.
-- Tick freshness is not validated.
+- Real-adapter tick age, quote, symbol-property and account-identity/currency diagnostic checks exist, but have only fixture verification. Account snapshot freshness is not established; reconciliation remains blocked.
 - Trading session schedules and fill policies are not fully validated.
 - Currency conversion beyond the supported USD major-pair model is incomplete.
 - Full reconnect, restart and manual-terminal reconciliation is not implemented.
@@ -541,9 +468,9 @@ This project is incapable of live order submission in its current form.
 - External allowed hosts require a secret, but Host headers alone are not a production trust boundary.
 - No TLS is provided.
 - No rate limiting exists.
-- No replay nonce store beyond idempotency exists.
-- Authentication failures return HTTP 200.
-- Arbitrary metadata is not recursively redacted.
+- No signed nonce store exists beyond alert ID/stable-field idempotency. Changing delivery headers cannot bypass identity.
+- Authentication failures return HTTP 401; processed risk blocks still return HTTP 200 with NO_TRADE.
+- Nested credential fields and known webhook-secret values are recursively filtered. Unknown secrets embedded in arbitrary free text can still persist.
 - No production secret manager exists.
 - No public TradingView HTTPS ingress was deployed.
 
@@ -562,13 +489,13 @@ This project is incapable of live order submission in its current form.
 ### Product and UI
 
 - The app must be served; direct file opening does not work.
-- The launcher uses a fixed port and cannot resolve stale port conflicts.
+- The launcher selects an available port when 8765 is occupied. It does not stop or identify the old process; users must open the newly printed URL.
 - Visual browser verification is incomplete.
 - Accessibility has only limited automated/structural verification.
 - No user authentication or multi-user isolation exists.
 - Error logging is intentionally quiet in the local HTTP server, which makes diagnosis harder.
 - API errors sometimes hide internal detail behind generic 503 responses.
-- Some documentation contains older descriptions below a “current safety review” notice; the notice and this report supersede those historical statements.
+- Implementation documents were reconciled in this pass. Supplied prompt/specification assets are preserved requirements and are not claims of implementation.
 - The Python package name in `pyproject.toml` remains `small-capital-forex-engine` even though product branding is SentinelFX.
 - The project directory remains named `forex-engine`.
 
@@ -584,7 +511,7 @@ This project is incapable of live order submission in its current form.
 
 ### Source control and reproducibility
 
-The project folder was not a Git repository during earlier checks. There is no commit history, branch, pull request or authoritative diff separating every historical edit. The report reconstructs changes from the current files and recorded tool/test results. Another agent should not claim commit-level provenance unless the project is first placed under source control.
+The project is now a public Git repository at https://github.com/Agent-X17/sentinelfx. Baseline commit f7e3985 contains the initial combined implementation; earlier edits were not individually committed. This pass is a separate branch/commit. See FINAL_PRELIVE_REVIEW.md for provenance.
 
 ## 13. Current data and archive handling
 
@@ -639,17 +566,17 @@ Use a fresh temporary database and an available port for runtime verification. D
 Priority order:
 
 1. Add adapter timeouts and move diagnostic MT5 calls outside the SQLite write transaction while preserving a safe version/revalidation protocol.
-2. Persist dedicated blocked-candidate snapshots and risk-check rows before the real-evidence gate.
-3. Add strict tick-age, market-session, account-currency and symbol-property validation.
+2. Extend existing blocked-candidate normalized-signal/risk rows into a versioned diagnostic snapshot/reconciliation design.
+3. Validate existing tick-age/currency/property diagnostics on a real demo terminal; implement market-session and account freshness checks.
 4. Design a typed native MT5 request translator, but keep order submission disabled.
 5. Implement explicit terminal/account reconciliation with stable account identity and restart behavior.
 6. Add a real evidence-provider interface for costs, news, macro context, legal entity and provider history.
-7. Add a public-ingress design with TLS, rate limits, signed requests, nonce/replay controls and recursive secret filtering.
-8. Define HTTP response semantics for webhook rejection versus successful delivery.
+7. Add public ingress with TLS, rate limits, signed requests and nonce controls; review remaining free-text secret leakage.
+8. Verify documented HTTP response semantics against real TradingView delivery/retry behavior.
 9. Add backup/restore, retention and externally anchored audit export.
-10. Improve launcher port detection and explain file-versus-server startup in the page/README.
+10. Verify launcher behavior on additional Mac installations.
 11. Perform a real browser accessibility and interaction review.
-12. Put the project under Git before the next major change.
+12. Preserve Git review history and require verification evidence for future changes.
 
 Do not remove the real-evidence block until every required source is implemented, tested and reviewed.
 
@@ -671,9 +598,11 @@ Do not claim:
 
 ## 17. Final truth statement
 
-SentinelFX is a substantial, working local simulation and risk-control codebase with deterministic Decimal sizing, persistent safety state, a usable dashboard, webhook validation, an MT5 diagnostic boundary, atomic paper-decision persistence, backtesting/research tools and 125 passing tests.
+SentinelFX is a substantial, working local simulation and risk-control codebase with deterministic Decimal sizing, persistent safety state, a usable dashboard, webhook validation, an MT5 diagnostic boundary, atomic paper-decision persistence, backtesting/research tools and 142 passing tests.
 
 Its safety posture is intentionally conservative: live submission is impossible, real-terminal candidates are blocked, unknown evidence becomes NO_TRADE, and synthetic fixtures are labeled.
 
 It still requires significant integration, security, reconciliation, operational and real-world verification work before it could be considered a demo-connected trading control system, and much more before any live-execution discussion.
 
+
+Current pass: [FINAL_PRELIVE_REVIEW.md](FINAL_PRELIVE_REVIEW.md). Future gates: [PRELIVE_CHECKLIST.md](PRELIVE_CHECKLIST.md). Browser verification is still incomplete; this is not a production-readiness sign-off.

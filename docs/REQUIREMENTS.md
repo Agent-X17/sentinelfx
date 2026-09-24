@@ -1,22 +1,23 @@
 # Requirements and implementation map
 
-## Current safety review — supersedes earlier connected-workflow descriptions
+## Execution and evidence boundary
 
-- Real MT5 candidates now return NO_TRADE with REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED. Verified provider history, costs, news/macro context and account reconciliation are absent; connection alone cannot grant approval.
-- Only an explicitly constructed in-process MockMT5Service in SIMULATION may use the synthetic bridge fixture. The server never constructs that adapter, and webhook fields cannot select it. Existing dashboard simulation exercises still work.
-- Broker/account reads on the real bridge are diagnostic only; real account equity is not imported into the simulated ledger. ACCOUNT_LIVE retains its seeded simulation balance. Its risk calculation remains conservatively capped at the configured $300 profile basis.
-- Auth failures use independent audit IDs and cannot reserve valid alert identities. Alert IDs take precedence over delivery headers. The top-level secret is removed even when an authentication header is also present. Do not put credentials in arbitrary metadata.
-- All bridge database changes, including paper reservation, journal and audit, commit or roll back together. A process failure rolls back the candidate; retrying the alert is safe. SQLite holds its write lock during adapter calls, so a slow terminal can delay local requests. This is a local correctness measure, not a scalable deployment architecture.
-- Terminal connection is rechecked on each real adapter operation. Namedtuple records retain their fields; numeric returns are preserved; false operations and nonzero/missing order-check return codes fail.
-- Account-wide external positions and pending orders block candidates. Full terminal reconciliation, currency conversion, tick freshness validation, request translation and reconnect recovery remain future work. The unconditional real-evidence gate prevents approval until those integrations are reviewed.
-- Raw intake rows show final blocked/processed status. Legacy audit and research records are preserved as historical data; they do not establish verified external evidence.
-- No schema files or supplied prompt files were changed. Live order submission remains disabled.
+The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
+
+Real MT5 reads are diagnostic only. External or unknown exposure blocks candidates. Otherwise the real bridge returns `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`, with diagnostic failures for stale/invalid ticks, symbol properties and account identity/currency. Account snapshot freshness and reconciliation remain unverified. Only an explicit in-process mock in SIMULATION can use synthetic bridge evidence; HTTP input cannot select it.
+
+Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
+
+Intake, paper reservation, journal and audit commit or roll back together. SQLite holds its write lock during adapter calls. Native-call timeouts and worker isolation are missing; a slow terminal can block writes. This remains a local single-user prototype.
+
+See [the review report](FULL_PROJECT_REPORT.md) and [future release checklist](PRELIVE_CHECKLIST.md) for verification and remaining work.
+
 
 Authority: `specs/requirements.txt` is the attached build specification. `specs/research-context.txt` is the attached research narrative. Referenced conversation instructions are additional context, not permission to place trades.
 
 | Specification area | Implemented surface | Boundary / qualification |
 |---|---|---|
-| 1. Starting capital and income reality | A/B/C plus MT5-backed ACCOUNT_LIVE, dashboard and simulator percentages, README | No income target optimization |
+| 1. Starting capital and income reality | A/B/C plus simulation-only ACCOUNT_LIVE, dashboard and simulator percentages, README | No income target optimization |
 | 2. Hard risk rules | RiskManager, policy, persistent loss/exposure accounting | Conservative limits may be tightened; increases are not implemented |
 | 3. Position sizing | Decimal sizing, contract-aware pip value, costs, downward grid rounding, margin | USD accounts, three major pairs; no arbitrary cross-currency conversion |
 | 4. Small vs cent | Two explicitly synthetic fixtures, calculator and comparison | Real broker contract structures are unverified |
@@ -31,7 +32,7 @@ Authority: `specs/requirements.txt` is the attached build specification. `specs/
 | 13. Learning | Sample count, Wilson interval, in/out-of-sample separation, no automatic risk increase | No automatic learned weight promotion; protects against spurious small-sample learning |
 | 14. Modular architecture | Domain services, webhook/bridge, read-check MT5 adapter, application orchestration, repository, research services, HTTP boundary | News/macro data remain synthetic inputs, not integrated feeds |
 | 15. UI | All eight pages, calculations, account state, raw signals, reasons, research/withdrawal forms, audit export | Recent decisions/outcomes/audit UI is capped at 100; full history remains in SQLite |
-| 16. Execution policy | Simulation/paper/connected-disabled modes; exact-volume MT5 order check; live startup refusal | order_send always refuses; live execution is intentionally absent |
+| 16. Execution policy | Simulation/paper/connected-disabled modes; mock-only exact-volume order check; live startup refusal | order_send always refuses; live execution is intentionally absent |
 | 17. Tests | Domain, randomized invariants, concurrency, persistence, HTTP, security, backtest/no-lookahead | Model correctness is not proof of real-world fills or investment performance |
 | 18. Final principle | Fail-closed response and atomic audited decision path | Audit persistence is required before returning approval |
 

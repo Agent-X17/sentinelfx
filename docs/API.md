@@ -1,16 +1,17 @@
 # Local API
 
-## Current safety review — supersedes earlier connected-workflow descriptions
+## Execution and evidence boundary
 
-- Real MT5 candidates now return NO_TRADE with REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED. Verified provider history, costs, news/macro context and account reconciliation are absent; connection alone cannot grant approval.
-- Only an explicitly constructed in-process MockMT5Service in SIMULATION may use the synthetic bridge fixture. The server never constructs that adapter, and webhook fields cannot select it. Existing dashboard simulation exercises still work.
-- Broker/account reads on the real bridge are diagnostic only; real account equity is not imported into the simulated ledger. ACCOUNT_LIVE retains its seeded simulation balance. Its risk calculation remains conservatively capped at the configured $300 profile basis.
-- Auth failures use independent audit IDs and cannot reserve valid alert identities. Alert IDs take precedence over delivery headers. The top-level secret is removed even when an authentication header is also present. Do not put credentials in arbitrary metadata.
-- All bridge database changes, including paper reservation, journal and audit, commit or roll back together. A process failure rolls back the candidate; retrying the alert is safe. SQLite holds its write lock during adapter calls, so a slow terminal can delay local requests. This is a local correctness measure, not a scalable deployment architecture.
-- Terminal connection is rechecked on each real adapter operation. Namedtuple records retain their fields; numeric returns are preserved; false operations and nonzero/missing order-check return codes fail.
-- Account-wide external positions and pending orders block candidates. Full terminal reconciliation, currency conversion, tick freshness validation, request translation and reconnect recovery remain future work. The unconditional real-evidence gate prevents approval until those integrations are reviewed.
-- Raw intake rows show final blocked/processed status. Legacy audit and research records are preserved as historical data; they do not establish verified external evidence.
-- No schema files or supplied prompt files were changed. Live order submission remains disabled.
+The default is `SIMULATION`. Live submission is unavailable: live-enabled startup and `LIVE_GATED` refuse, `order_send()` refuses, and no live-order HTTP route exists. A/B/C are $50/$100/$150 simulations; `ACCOUNT_LIVE` is a $300 simulation placeholder, never reconciled real equity.
+
+Real MT5 reads are diagnostic only. External or unknown exposure blocks candidates. Otherwise the real bridge returns `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`, with diagnostic failures for stale/invalid ticks, symbol properties and account identity/currency. Account snapshot freshness and reconciliation remain unverified. Only an explicit in-process mock in SIMULATION can use synthetic bridge evidence; HTTP input cannot select it.
+
+Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
+
+Intake, paper reservation, journal and audit commit or roll back together. SQLite holds its write lock during adapter calls. Native-call timeouts and worker isolation are missing; a slow terminal can block writes. This remains a local single-user prototype.
+
+See [the review report](FULL_PROJECT_REPORT.md) and [future release checklist](PRELIVE_CHECKLIST.md) for verification and remaining work.
+
 
 Base URL: `http://127.0.0.1:8765`.
 
@@ -24,13 +25,13 @@ Base URL: `http://127.0.0.1:8765`.
 
 ## TradingView route
 
-`POST /api/webhook/tradingview` accepts a JSON object. Authentication uses `X-Webhook-Secret` or a `secret` JSON field. An `Idempotency-Key` header is optional; otherwise `alert_id` is preferred. The route performs:
+`POST /api/webhook/tradingview` accepts a JSON object. Authentication uses `X-Webhook-Secret` or a `secret` JSON field. `alert_id` determines identity; without it a stable signal-field hash is used. `Idempotency-Key` is accepted for compatibility but does not change identity. The route performs:
 
 1. host and secret validation;
 2. schema, timestamp and symbol validation;
 3. duplicate detection and raw persistence;
 4. MT5 account/symbol/tick/position reads when connected;
-5. risk preview and exact-volume MT5 `order_check`;
+5. real adapters stop with an evidence block; explicit in-process simulation mocks alone can reach risk preview and exact-volume `order_check`;
 6. full risk re-evaluation and atomic paper/simulation persistence.
 
 No route submits an MT5 order.
@@ -73,3 +74,14 @@ Processed bridge responses contain:
 ```
 
 `BUY` or `SELL` means an approved simulation/paper candidate. It never means that a live order was sent.
+
+## HTTP response semantics
+
+- 401: incorrect webhook authentication.
+- 400: malformed JSON/object or payload.
+- 422: stale/expired alerts or unmapped/ambiguous symbols.
+- 409: duplicate delivery.
+- 200: delivery processed, including a diagnostic/risk `NO_TRADE` block. Read the JSON decision, not just the HTTP status.
+- 403: host/origin/CSRF rejection; 413: body limit; 503: unavailable bridge/storage or rollback.
+
+All bridge responses include `order_sent: false`; processed mock decisions additionally identify `SYNTHETIC_TEST_FIXTURE`. Dashboard decisions identify synthetic simulation or unverified evidence. HTTP sockets have a 10-second inactivity timeout; this does not cancel native MT5 calls.

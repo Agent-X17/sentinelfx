@@ -5,6 +5,8 @@ from uuid import uuid4
 from .domain import InvalidData, decimal, stamp
 from .storage import Store, dumps, loads
 from .mt5 import MockMT5Service
+from .redaction import redact
+from .diagnostics import validate_diagnostics
 
 
 class TradingBridge:
@@ -25,9 +27,12 @@ class TradingBridge:
         # Serialize intake, reservation, journal and audit as one local unit.
         # Nested application transactions share this connection on this thread.
         with self.application.store.transaction():
-            return self._ingest(payload, secret, idempotency_key)
+            result = self._ingest(payload, secret, idempotency_key)
+            result['order_sent'] = False
+            return result
 
     def _ingest(self, payload, secret=None, idempotency_key=None):
+        payload = redact(payload, (secret, self.authenticator.secret))
         if isinstance(payload, dict):
             payload = dict(payload)
             payload.pop('secret', None)
@@ -78,6 +83,8 @@ class TradingBridge:
             return self._blocked(raw_id, check.signal, 'REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED', {
                 'account': account_result.to_dict(), 'symbol': symbol_result.to_dict(),
                 'tick': tick_result.to_dict(),
+                'diagnostic_failures': validate_diagnostics(check.signal, symbol_result.data, tick_result.data, account_result.data),
+                'account_reconciled': False,
                 'missing_evidence': ['broker_entity', 'provider_history', 'news', 'macro',
                                      'commission', 'swap', 'slippage', 'account_reconciliation'],
             })
@@ -173,6 +180,9 @@ class TradingBridge:
     def _blocked(self, raw_id, signal, reason, mt5=None):
         result = {"accepted": False, "status": "blocked", "decision": "NO_TRADE", "reason": reason, "raw_webhook_id": raw_id, "signal": signal, "mt5": mt5, "order_sent": False}
         with self.application.store.transaction() as db:
+            if not db.execute('SELECT 1 FROM normalized_signals WHERE id=?', (signal['signal_id'],)).fetchone():
+                db.execute('INSERT INTO normalized_signals(id,raw_webhook_id,status,payload,created_at) VALUES(?,?,?,?,?)', (signal['signal_id'],raw_id,'NO_TRADE',dumps(signal),stamp()))
+            db.execute('INSERT INTO risk_checks(id,signal_id,payload,created_at) VALUES(?,?,?,?)', (str(uuid4()),signal['signal_id'],dumps(result),stamp()))
             db.execute('UPDATE raw_webhooks SET status=?,reason=? WHERE id=?', ('blocked', reason, raw_id))
             db.execute('UPDATE normalized_signals SET status=? WHERE raw_webhook_id=?', ('NO_TRADE', raw_id))
             Store.audit(db, "EXECUTION_BLOCKED", result)

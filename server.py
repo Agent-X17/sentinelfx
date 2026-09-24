@@ -5,6 +5,8 @@ import json
 import os
 import secrets
 import sqlite3
+import errno
+import sys
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
@@ -18,12 +20,16 @@ from engine.config import Settings
 from engine.mt5 import MT5Service
 from engine.webhook import TradingViewWebhookService, WebhookAuthenticator, SymbolMapper
 from engine.bridge import TradingBridge
+from engine.redaction import redact
 
 ROOT=Path(__file__).resolve().parent
 
 def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(10)
         def log_message(self,fmt,*args): pass
         def send(self,status,body,content_type='application/json'):
             data=body if isinstance(body,bytes) else dumps(body).encode()
@@ -70,11 +76,15 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                     with app.store.transaction() as db: Store.audit(db,'MALFORMED_REQUEST',{'bytes':length,'reason':'Invalid JSON'})
                     return self.send(400,{'decision':'NO_TRADE','error':'Malformed JSON','live_execution_enabled':False})
                 if not isinstance(payload,dict): raise InvalidData('JSON object required')
+                if not is_webhook:
+                    payload=redact(payload, (settings.webhook_secret,) if settings else ())
                 if is_webhook:
                     if bridge is None: return self.send(503,{'error':'Webhook bridge unavailable','decision':'NO_TRADE'})
                     body_secret=payload.pop('secret',None)
                     supplied_secret=self.headers.get('X-Webhook-Secret') or body_secret
                     result=bridge.ingest(payload,supplied_secret,self.headers.get('Idempotency-Key'))
+                    status = 401 if result.get('reason') == 'WEBHOOK_AUTH_FAILED' else {'malformed':400,'stale':422,'unmapped':422,'duplicate':409}.get(result.get('status'),200)
+                    return self.send(status,result)
                 elif path=='/api/evaluate': result=app.evaluate(payload)
                 elif path=='/api/scenario':
                     if payload.get('scenario') not in ('safe','standard','stale','news','spread','missing-stop','correlation'): raise InvalidData('Unknown scenario')
@@ -111,8 +121,20 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                 self.send(503,{'error':'Operation failed and was rolled back. No live order was sent.','decision':'NO_TRADE'})
     return ThreadingHTTPServer(('127.0.0.1',port),Handler)
 
-if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--db');parser.add_argument('--policy')
+def bind_server(application, port, bridge, mt5, settings, fallback=False):
+    try:
+        return make_server(application,port,bridge,mt5,settings)
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        if not fallback:
+            raise InvalidData(f'Port {port} is already in use. Use --port 0 for an available port, or --port-fallback.') from exc
+        print(f'Port {port} is occupied; choosing an available localhost port.', flush=True)
+        return make_server(application,0,bridge,mt5,settings)
+
+
+def main():
+    parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--db');parser.add_argument('--policy');parser.add_argument('--port-fallback',action='store_true')
     args=parser.parse_args()
     settings=Settings.from_env(ROOT,args.db)
     policy=Policy(**json.loads(Path(args.policy).read_text())) if args.policy else Policy()
@@ -122,7 +144,16 @@ if __name__=='__main__':
     with application.store.connect() as db: mappings=Store.symbol_mappings(db)
     webhook=TradingViewWebhookService(SymbolMapper(mappings),settings.webhook_max_age_seconds)
     bridge=TradingBridge(application,webhook,WebhookAuthenticator(settings.webhook_secret),mt5,settings)
-    server=make_server(application,args.port,bridge,mt5,settings)
+    server=bind_server(application,args.port,bridge,mt5,settings,args.port_fallback)
     print(f'SentinelFX • http://127.0.0.1:{server.server_port} • {settings.mode}',flush=True)
     try: server.serve_forever()
-    except KeyboardInterrupt: server.server_close();mt5.shutdown()
+    except KeyboardInterrupt: pass
+    finally: server.server_close();mt5.shutdown()
+
+
+if __name__=='__main__':
+    try:
+        main()
+    except (InvalidData, OSError, ValueError) as exc:
+        print(f'SentinelFX could not start: {exc}', file=sys.stderr)
+        sys.exit(1)

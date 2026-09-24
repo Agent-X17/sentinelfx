@@ -65,8 +65,8 @@ class TradingViewWebhookService:
     def idempotency_key(payload, header_key=None):
         if isinstance(payload.get("alert_id"), str) and payload["alert_id"].strip():
             return "alert:" + payload["alert_id"].strip()[:194]
-        if isinstance(header_key, str) and header_key.strip():
-            return header_key.strip()[:200]
+        # Delivery headers are transport metadata, never a replay escape hatch.
+        # Without an alert ID, the stable signal identity determines uniqueness.
         material = "|".join(str(payload.get(key, "")) for key in ("alert_id", "symbol", "side", "strategy", "timeframe", "timestamp"))
         return hashlib.sha256(material.encode()).hexdigest()
 
@@ -78,6 +78,8 @@ class TradingViewWebhookService:
             return WebhookResult(False, "malformed", "JSON object required", alert_id, key)
         alert_id = str(payload.get("alert_id") or uuid4())
         key = self.idempotency_key(payload, header_key)
+        if payload.get('alert_id') is not None and (not isinstance(payload['alert_id'],str) or not 1 <= len(payload['alert_id'].strip()) <= 194):
+            return WebhookResult(False, 'malformed', 'alert_id must be 1 to 194 characters', alert_id, key)
         missing = [name for name in self.REQUIRED if not isinstance(payload.get(name), str) or not payload[name].strip()]
         if missing:
             return WebhookResult(False, "malformed", "Missing fields: " + ", ".join(missing), alert_id, key)
@@ -103,6 +105,12 @@ class TradingViewWebhookService:
         if payload.get("stop_loss") is None:
             return WebhookResult(False, "malformed", "stop_loss is required", alert_id, key)
         expires = payload.get("expires_at") or (event_time + timedelta(seconds=self.max_age_seconds)).isoformat()
+        try:
+            expiry = date(expires)
+            if expiry <= now or expiry <= event_time:
+                return WebhookResult(False, 'stale', 'Alert has expired', alert_id, key)
+        except InvalidData:
+            return WebhookResult(False, 'malformed', 'Invalid expires_at', alert_id, key)
         signal = {
             "signal_id": alert_id,
             "symbol": mapping["canonical_symbol"],

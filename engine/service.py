@@ -100,6 +100,8 @@ class Application:
                 result['reason']='; '.join(reasons)
             result['decision_id']=str(uuid4()); result['signal_id']=sid
             result['operating_mode']=operating_mode
+            result['order_sent']=False
+            result['evidence_source']='SYNTHETIC_SIMULATION' if market.get('synthetic') is True else 'UNVERIFIED'
             result['validation_results'].append({'stage':'Persistent safety controls','passed':not reasons,'reasons':list(reasons)})
             if not duplicate:
                 db.execute('INSERT INTO signals VALUES(?,?,?,?,?,?,?,?)',(sid,provider_id,profile,stamp(),dumps(raw),dumps(SignalNormalizer.normalize(raw)),result['decision'],result['reason']))
