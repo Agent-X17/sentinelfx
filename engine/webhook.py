@@ -1,6 +1,7 @@
 """TradingView webhook validation and canonical signal normalization."""
 import hashlib
 import hmac
+import json
 from dataclasses import dataclass, asdict
 from datetime import timedelta
 from uuid import uuid4
@@ -49,6 +50,8 @@ class SymbolMapper:
         candidates = self.mappings.get(canonical, [])
         if isinstance(candidates, str):
             candidates = [candidates]
+        if not isinstance(candidates, list) or not all(isinstance(x,str) and x.strip() for x in candidates):
+            return {'ok':False,'canonical_symbol':canonical,'mt5_symbol':None,'reason':'SYMBOL_MAPPING_INVALID'}
         if len(candidates) != 1:
             return {"ok": False, "canonical_symbol": canonical, "mt5_symbol": None, "reason": "SYMBOL_UNMAPPED" if not candidates else "SYMBOL_AMBIGUOUS"}
         return {"ok": True, "canonical_symbol": canonical, "mt5_symbol": candidates[0], "reason": None}
@@ -63,11 +66,23 @@ class TradingViewWebhookService:
 
     @staticmethod
     def idempotency_key(payload, header_key=None):
-        if isinstance(payload.get("alert_id"), str) and payload["alert_id"].strip():
-            return "alert:" + payload["alert_id"].strip()[:194]
+        if isinstance(payload.get("alert_id"), str) and 1 <= len(payload['alert_id'].strip()) <= 194:
+            return 'id:v2:' + hashlib.sha256(payload['alert_id'].strip().encode()).hexdigest()
         # Delivery headers are transport metadata, never a replay escape hatch.
         # Without an alert ID, the stable signal identity determines uniqueness.
-        material = "|".join(str(payload.get(key, "")) for key in ("alert_id", "symbol", "side", "strategy", "timeframe", "timestamp"))
+        fields = [payload.get(key) for key in ('symbol','side','strategy','timeframe','timestamp')]
+        try:
+            fields = [SymbolMapper.canonical(fields[0]), fields[1].strip().upper(), fields[2].strip(), fields[3].strip(), date(fields[4]).isoformat()]
+        except (InvalidData, AttributeError):
+            pass
+        material = json.dumps(fields, sort_keys=True, separators=(',',':'))
+        return 'signal:v2:' + hashlib.sha256(material.encode()).hexdigest()
+
+    @staticmethod
+    def legacy_key(payload):
+        if isinstance(payload.get('alert_id'),str) and payload['alert_id'].strip():
+            return 'alert:' + payload['alert_id'].strip()[:194]
+        material = '|'.join(str(payload.get(key,'')) for key in ('alert_id','symbol','side','strategy','timeframe','timestamp'))
         return hashlib.sha256(material.encode()).hexdigest()
 
     def validate(self, payload, header_key=None, now=None):
@@ -104,7 +119,7 @@ class TradingViewWebhookService:
                     return WebhookResult(False, "malformed", field + " must be numeric", alert_id, key)
         if payload.get("stop_loss") is None:
             return WebhookResult(False, "malformed", "stop_loss is required", alert_id, key)
-        expires = payload.get("expires_at") or (event_time + timedelta(seconds=self.max_age_seconds)).isoformat()
+        expires = payload.get('expires_at', (event_time + timedelta(seconds=self.max_age_seconds)).isoformat())
         try:
             expiry = date(expires)
             if expiry <= now or expiry <= event_time:
@@ -112,7 +127,7 @@ class TradingViewWebhookService:
         except InvalidData:
             return WebhookResult(False, 'malformed', 'Invalid expires_at', alert_id, key)
         signal = {
-            "signal_id": alert_id,
+            "signal_id": key,
             "symbol": mapping["canonical_symbol"],
             "mt5_symbol": mapping["mt5_symbol"],
             "direction": side,

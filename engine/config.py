@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import os
 
-from .domain import InvalidData
+from .domain import InvalidData, PROFILES
 
 SYSTEM_MODES = {"DISCONNECTED", "SIMULATION", "PAPER_TRADING", "LIVE_DISABLED", "LIVE_GATED"}
 
@@ -53,10 +53,14 @@ class Settings:
         return settings
 
     def validate(self):
+        if self.default_account_profile not in PROFILES:
+            raise InvalidData('Unknown DEFAULT_ACCOUNT_PROFILE')
         if self.mode not in SYSTEM_MODES:
             raise InvalidData('Unknown SYSTEM_MODE')
         if self.webhook_allowed_hosts and not self.webhook_secret:
             raise InvalidData('External webhook hosts require a secret')
+        if self.webhook_allowed_hosts and len(self.webhook_secret.strip()) < 32:
+            raise InvalidData('External webhook hosts require a secret of at least 32 characters')
         if self.webhook_max_age_seconds < 1 or self.webhook_max_age_seconds > 3600:
             raise InvalidData("WEBHOOK_MAX_AGE_SECONDS must be between 1 and 3600")
         if self.live_execution_enabled:

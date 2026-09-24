@@ -14,7 +14,7 @@ blocked. A future release needs independent design, implementation and review.
 | ACCOUNT_LIVE | Simulated only; $300 profile basis | Stable account identity, reconciled equity/currency/exposure, snapshot age, restart and manual-trade handling required |
 | Real MT5 reads and tick/property diagnostics | Implemented checks, fixture-tested only | Controlled demo-terminal tests with stale ticks, disconnects, restarts, account switches, invalid symbols and external exposure |
 | Native broker order-request translation | Missing | Typed requests; broker filling modes, sessions, precision, stop/freeze levels; demo validation with exact volume |
-| Native-call isolation and cancellation | Missing; worker approach is a design proposal | Bounded work, no stuck SQLite writers, recovery, concurrent-delivery tests and versioned state revalidation |
+| Native diagnostic isolation and cancellation | Implemented on server: separate process, five-second timeout, busy block, no DB write lock during reads | Verify against intended terminal host; real approval still requires versioned reconciliation and recovery |
 | Broker entity serving Tanzania | Missing | Dated source documents stored and independently reviewed; user-specific serving entity confirmed |
 | Tanzania withdrawal/payment evidence | Manual record interface only | Actual evidence, amount/cost/time/method and independent review; no automatic approval from a checked box |
 | Real provider history and edge | Missing | Provenance, drawdown including floating losses, costs, independent samples and sustained demo forward study |
@@ -23,7 +23,7 @@ blocked. A future release needs independent design, implementation and review.
 | Webhook validation, replay identity and credential filtering | Implemented, locally tested | Signed delivery or reviewed ingress authentication; nonce/replay policy; rate limits; secret rotation; adversarial tests |
 | HTTPS, user authentication and network deployment | Missing | TLS, identity/access model, reverse-proxy trust, restricted endpoints, threat review and monitoring |
 | SQLite atomicity and audit chain | Implemented, locally tested | Preserve rollback; audit chain is not administrator-proof; external anchoring is a proposal |
-| Backup/restore and retention | Missing | Tested restores, consistency checks, recovery targets, retention policy and disaster exercise |
+| Backup/restore and retention | Verified SQLite copy/restore to new paths implemented and locally tested; scheduling/retention missing | Deploy backups, define recovery targets and retention, exercise restore on intended host |
 | PostgreSQL | Design target only | Repository implementation, migrations, concurrency/rollback and restore tests before claiming support |
 | Operational observability | Missing | Structured redacted logs, metrics, alerts, incident procedure and documented safe shutdown |
 | Live order submission and reconciliation | Intentionally absent | Human confirmation, kill switch, uncertain-fill recovery, durable order identity, restart reconciliation and independent review |

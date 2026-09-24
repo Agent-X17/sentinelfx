@@ -18,11 +18,19 @@ from engine.storage import Store,dumps
 from engine.research import BacktestingService,CandleBacktestingService
 from engine.config import Settings
 from engine.mt5 import MT5Service
+from engine.isolated_mt5 import IsolatedMT5Service
 from engine.webhook import TradingViewWebhookService, WebhookAuthenticator, SymbolMapper
 from engine.bridge import TradingBridge
 from engine.redaction import redact
 
 ROOT=Path(__file__).resolve().parent
+
+def strict_object(pairs):
+    result={}
+    for key,value in pairs:
+        if key in result: raise ValueError('Duplicate JSON field')
+        result[key]=value
+    return result
 
 def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
     token=secrets.token_urlsafe(32)
@@ -71,8 +79,8 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=2_000_000: return self.send(413,{'error':'Invalid body size'})
                 raw=self.rfile.read(length)
-                try: payload=json.loads(raw,parse_constant=lambda x: (_ for _ in ()).throw(ValueError('Nonfinite JSON number')))
-                except ValueError:
+                try: payload=json.loads(raw,object_pairs_hook=strict_object,parse_constant=lambda x: (_ for _ in ()).throw(ValueError('Nonfinite JSON number')))
+                except (ValueError,RecursionError):
                     with app.store.transaction() as db: Store.audit(db,'MALFORMED_REQUEST',{'bytes':length,'reason':'Invalid JSON'})
                     return self.send(400,{'decision':'NO_TRADE','error':'Malformed JSON','live_execution_enabled':False})
                 if not isinstance(payload,dict): raise InvalidData('JSON object required')
@@ -80,7 +88,7 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                     payload=redact(payload, (settings.webhook_secret,) if settings else ())
                 if is_webhook:
                     if bridge is None: return self.send(503,{'error':'Webhook bridge unavailable','decision':'NO_TRADE'})
-                    body_secret=payload.pop('secret',None)
+                    body_secret=payload.get('secret')
                     supplied_secret=self.headers.get('X-Webhook-Secret') or body_secret
                     result=bridge.ingest(payload,supplied_secret,self.headers.get('Idempotency-Key'))
                     status = 401 if result.get('reason') == 'WEBHOOK_AUTH_FAILED' else {'malformed':400,'stale':422,'unmapped':422,'duplicate':409}.get(result.get('status'),200)
@@ -113,8 +121,12 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                 self.send(200,result)
             except (InvalidData,ValueError,TypeError,KeyError) as exc:
                 try:
-                    with app.store.transaction() as db: Store.audit(db,'REQUEST_REFUSED',{'path':urlparse(self.path).path,'reason':str(exc)})
-                    self.send(400,{'error':str(exc),'decision':'NO_TRADE','live_execution_enabled':False})
+                    # Parser/type errors may contain supplied strings. Do not
+                    # echo or log their values as diagnostic explanations.
+                    reason=str(exc) if isinstance(exc,InvalidData) else 'Invalid request value or structure'
+                    reason=redact(reason,(settings.webhook_secret,) if settings else ())
+                    with app.store.transaction() as db: Store.audit(db,'REQUEST_REFUSED',{'path':path,'reason':reason})
+                    self.send(400,{'error':reason,'decision':'NO_TRADE','live_execution_enabled':False})
                 except Exception:
                     self.send(503,{'error':'Audit unavailable; operation not approved.','decision':'NO_TRADE'})
             except Exception:
@@ -139,7 +151,7 @@ def main():
     settings=Settings.from_env(ROOT,args.db)
     policy=Policy(**json.loads(Path(args.policy).read_text())) if args.policy else Policy()
     application=Application(settings.database_path,policy,settings)
-    mt5=MT5Service(settings.mt5_enabled,settings.mt5_terminal_path)
+    mt5=IsolatedMT5Service(settings.mt5_enabled,settings.mt5_terminal_path)
     if settings.mt5_enabled: mt5.initialize()
     with application.store.connect() as db: mappings=Store.symbol_mappings(db)
     webhook=TradingViewWebhookService(SymbolMapper(mappings),settings.webhook_max_age_seconds)

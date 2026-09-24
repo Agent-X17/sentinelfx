@@ -1,5 +1,6 @@
 """TradingView -> validation -> MT5 broker truth -> risk engine orchestration."""
 from decimal import Decimal
+from dataclasses import replace
 from uuid import uuid4
 
 from .domain import InvalidData, decimal, stamp
@@ -7,6 +8,8 @@ from .storage import Store, dumps, loads
 from .mt5 import MockMT5Service
 from .redaction import redact
 from .diagnostics import validate_diagnostics
+from .isolated_mt5 import SnapshotMT5
+from .mt5_worker import collect
 
 
 class TradingBridge:
@@ -24,6 +27,15 @@ class TradingBridge:
         )
 
     def ingest(self, payload, secret=None, idempotency_key=None):
+        # Real reads never authorize or reserve risk. Collect them without a DB
+        # write lock, then validate and deduplicate again in the atomic commit.
+        if type(self.mt5) is not MockMT5Service and not isinstance(self.mt5, SnapshotMT5):
+            if self.authenticator.verify(secret):
+                check=self.webhook_service.validate(payload,idempotency_key)
+                if check.accepted and self.settings.mode != 'DISCONNECTED':
+                    data = self.mt5.snapshot(check.signal['mt5_symbol']) if hasattr(self.mt5,'snapshot') else collect(self.mt5,check.signal['mt5_symbol'])
+                    bridge=TradingBridge(self.application,self.webhook_service,self.authenticator,SnapshotMT5(data),self.settings)
+                    return bridge.ingest(payload,secret,idempotency_key)
         # Serialize intake, reservation, journal and audit as one local unit.
         # Nested application transactions share this connection on this thread.
         with self.application.store.transaction():
@@ -32,7 +44,10 @@ class TradingBridge:
             return result
 
     def _ingest(self, payload, secret=None, idempotency_key=None):
-        payload = redact(payload, (secret, self.authenticator.secret))
+        original = payload
+        body_secret=original.get('secret') if isinstance(original,dict) else None
+        sensitive=(secret,self.authenticator.secret,body_secret)
+        payload = redact(payload, sensitive)
         if isinstance(payload, dict):
             payload = dict(payload)
             payload.pop('secret', None)
@@ -44,9 +59,14 @@ class TradingBridge:
                 Store.audit(db, "WEBHOOK_REJECTED", {"id": raw_id, "reason": "WEBHOOK_AUTH_FAILED"})
             return {"accepted": False, "status": "rejected", "decision": "NO_TRADE", "reason": "WEBHOOK_AUTH_FAILED", "raw_webhook_id": raw_id}
 
-        check = self.webhook_service.validate(payload, idempotency_key)
+        check = self.webhook_service.validate(original, idempotency_key)
+        legacy_key = self.webhook_service.legacy_key(original) if check.accepted else ''
+        check = replace(check, alert_id=check.idempotency_key,
+                        signal=redact(check.signal,sensitive))
+        if not check.accepted:
+            check = replace(check,idempotency_key='rejected:' + raw_id)
         with self.application.store.transaction() as db:
-            duplicate = db.execute("SELECT id FROM raw_webhooks WHERE idempotency_key=?", (check.idempotency_key,)).fetchone()
+            duplicate = db.execute("SELECT id FROM raw_webhooks WHERE idempotency_key IN (?,?)", (check.idempotency_key,legacy_key)).fetchone()
             if duplicate:
                 Store.audit(db, "WEBHOOK_DUPLICATE", {"existing_id": duplicate["id"], "idempotency_key": check.idempotency_key})
                 return {"accepted": False, "status": "duplicate", "decision": "NO_TRADE", "reason": "DUPLICATE_WEBHOOK", "raw_webhook_id": duplicate["id"]}
@@ -98,16 +118,7 @@ class TradingBridge:
             account = Store.get(db, "accounts", profile)
             if account is None:
                 raise InvalidData("Configured account profile is missing")
-            if not account.get("mt5_initialized"):
-                account["starting_equity"] = str(account_result.data.get("equity", account["starting_equity"]))
-                account["mt5_initialized"] = True
-            account.update(
-                equity=str(account_result.data.get("equity", account["equity"])),
-                free_margin=str(account_result.data.get("margin_free", account["free_margin"])),
-                state_certain=True,
-                updated_at=stamp(),
-            )
-            Store.put(db, "accounts", profile, account)
+            # Mock terminal balances are diagnostic fixtures, never ledger input.
             Store.put(db, "broker_profiles", "mt5-runtime", broker)
             provider = Store.get(db, "providers", "tradingview")
             if provider is None:
@@ -179,6 +190,8 @@ class TradingBridge:
 
     def _blocked(self, raw_id, signal, reason, mt5=None):
         result = {"accepted": False, "status": "blocked", "decision": "NO_TRADE", "reason": reason, "raw_webhook_id": raw_id, "signal": signal, "mt5": mt5, "order_sent": False}
+        result['evidence_source']='DIAGNOSTIC_ONLY_UNVERIFIED'
+        result=redact(result,(self.authenticator.secret,))
         with self.application.store.transaction() as db:
             if not db.execute('SELECT 1 FROM normalized_signals WHERE id=?', (signal['signal_id'],)).fetchone():
                 db.execute('INSERT INTO normalized_signals(id,raw_webhook_id,status,payload,created_at) VALUES(?,?,?,?,?)', (signal['signal_id'],raw_id,'NO_TRADE',dumps(signal),stamp()))

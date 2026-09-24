@@ -1,5 +1,7 @@
 # SentinelFX pre-live hardening review — 2026-09-24
 
+Historical report for commit 09adec9. The results and limitations below describe that snapshot only. For the current branch use [SYSTEM_READINESS_REVIEW.md](SYSTEM_READINESS_REVIEW.md) and [VERIFICATION.md](VERIFICATION.md).
+
 ## 1. Overall assessment
 
 The local research/simulation architecture was hardened in place. RiskManager, A/B/C limits, migrations and audit history are preserved. This is not production-ready and cannot submit live orders. **The full success condition is not met:** actual browser verification is blocked by the host sandbox. Automated tests and DOM integration pass.

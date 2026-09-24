@@ -201,9 +201,9 @@ Implements:
 - explicit `order_sent: false`;
 - explicit `SYNTHETIC_TEST_FIXTURE` label.
 
-Each bridge request uses one SQLite write transaction. Nested application transactions share that thread-local connection. This closes races between duplicate detection, preview, size check, reservation, journal and audit. If journal/audit persistence fails, the entire candidate rolls back.
+Each bridge persistence phase uses one SQLite write transaction. Real diagnostics are collected first without a database lock, then the alert is revalidated and deduplicated inside the transaction. Real diagnostics never approve or reserve a position. Mock preview, size check, reservation, journal and audit remain atomic. A journal/audit failure rolls back the candidate.
 
-Tradeoff: MT5/mock calls occur while the SQLite write lock is held. A slow or stuck terminal can delay other local writers. This is acceptable for the current single-user local safety prototype but is not a scalable production design.
+The server collects native MT5 diagnostics in a separate process with a five-second timeout and one active worker. Busy, timeout, unavailable and account-drift states block candidates. Only explicit in-process mock checks remain under the SQLite lock. Direct library consumers of MT5Service must adopt the isolated wrapper to obtain those timeout guarantees.
 
 ### Persistence
 
@@ -251,7 +251,7 @@ Implements:
 
 Webhook authentication failure returns 401, malformed input 400, stale/unmapped input 422, duplicates 409, and processed diagnostic/risk blocks 200 with NO_TRADE. HTTP acceptance never means order approval. See API.md.
 
-The server has no TLS, user accounts, sessions suitable for a network service, reverse-proxy trust configuration, rate limiting, native-call timeouts, metrics or production logging. HTTP socket inactivity is bounded at 10 seconds.
+The server has no TLS, user accounts, sessions suitable for a network service, reverse-proxy trust configuration, rate limiting, metrics or production logging. HTTP socket inactivity is bounded at 10 seconds; the server's native diagnostic process has a five-second deadline.
 
 ### Dashboard
 
@@ -410,11 +410,11 @@ No schema migration was added for this hardening pass.
 
 ## 9. Testing truth
 
-The current review passes **142 tests**, including all 125 baseline tests and 17 new pre-live regressions. Exact commands and runtime evidence are in [VERIFICATION.md](VERIFICATION.md). These test deterministic local behavior, not broker fills, profitability or production security.
+The current review passes **170 tests**: the 142-test previous hardening baseline plus 28 readiness regressions. Exact commands and runtime evidence are in [VERIFICATION.md](VERIFICATION.md). These test deterministic local behavior, not broker fills, profitability or production security.
 
 ## 10. Runtime verification truth
 
-A fresh `/tmp/sentinelfx-final-prelive.sqlite3` instance started on port 8877 with SIMULATION and MT5/live disabled. Root, JavaScript, CSS, health and state returned 200; audit integrity and migrations 1–3 passed. No live endpoint exists (404). Separate actual startup processes refused both live-enabled configuration and LIVE_GATED with exit code 1.
+A fresh temporary database in `/tmp/sentinelfx-readiness.QO3Alp/` started on port 8877 with SIMULATION and MT5/live disabled. Root/assets/health/state and audit integrity passed. No live endpoints exist (404). Actual startup processes refused live-enabled configuration and LIVE_GATED with exit code 1. Verified backup/restore round-trip passed. See VERIFICATION.md.
 
 Actual Chromium browser verification is blocked by the macOS sandbox: `bootstrap_check_in ... Permission denied (1100)`. Agent-browser and an independent downloaded headless Chromium both failed before page load. Do not claim a browser visual/accessibility pass. See VERIFICATION.md for separate DOM-harness results and their limits.
 
@@ -456,10 +456,10 @@ This project is incapable of live order submission in its current form.
 
 ### Atomicity and performance
 
-- The SQLite write lock spans external adapter calls.
-- A slow MT5 call can block dashboard writes.
-- No adapter call timeout/cancellation layer exists.
-- No job queue or worker isolation exists.
+- Real server diagnostics run outside the SQLite write transaction in a bounded process.
+- Native worker timeout is five seconds; concurrent requests get a busy block.
+- Full order lifecycle reconciliation and durable job scheduling remain absent.
+- Direct use of the low-level MT5Service does not provide worker isolation; the server uses IsolatedMT5Service.
 - The approach is appropriate only for the current local single-user prototype.
 
 ### Webhook and network security
@@ -478,7 +478,7 @@ This project is incapable of live order submission in its current form.
 
 - SQLite is local and single-host.
 - PostgreSQL is unimplemented.
-- No backup/restore workflow is implemented.
+- Verified backup/restore to new database paths is implemented and tested; scheduling and retention remain deployment responsibilities.
 - No data retention or archival policy exists.
 - Audit hashes are not externally anchored.
 - A local administrator can alter files and recompute a chain.
@@ -511,7 +511,7 @@ This project is incapable of live order submission in its current form.
 
 ### Source control and reproducibility
 
-The project is now a public Git repository at https://github.com/Agent-X17/sentinelfx. Baseline commit f7e3985 contains the initial combined implementation; earlier edits were not individually committed. This pass is a separate branch/commit. See FINAL_PRELIVE_REVIEW.md for provenance.
+The project is a public Git repository at https://github.com/Agent-X17/sentinelfx. Baseline f7e3985 contains the initial implementation and 09adec9 contains the previous hardening pass. Earlier edits were not individually committed. Current work continues on prelive-hardening; see SYSTEM_READINESS_REVIEW.md.
 
 ## 13. Current data and archive handling
 
@@ -565,7 +565,7 @@ Use a fresh temporary database and an available port for runtime verification. D
 
 Priority order:
 
-1. Add adapter timeouts and move diagnostic MT5 calls outside the SQLite write transaction while preserving a safe version/revalidation protocol.
+1. Verify the implemented isolated diagnostics on the intended MT5 host, and design state-version/revalidation for any future real approval path.
 2. Extend existing blocked-candidate normalized-signal/risk rows into a versioned diagnostic snapshot/reconciliation design.
 3. Validate existing tick-age/currency/property diagnostics on a real demo terminal; implement market-session and account freshness checks.
 4. Design a typed native MT5 request translator, but keep order submission disabled.
@@ -573,7 +573,7 @@ Priority order:
 6. Add a real evidence-provider interface for costs, news, macro context, legal entity and provider history.
 7. Add public ingress with TLS, rate limits, signed requests and nonce controls; review remaining free-text secret leakage.
 8. Verify documented HTTP response semantics against real TradingView delivery/retry behavior.
-9. Add backup/restore, retention and externally anchored audit export.
+9. Deploy the implemented verified backup/restore workflow with scheduling, retention and externally anchored audit export.
 10. Verify launcher behavior on additional Mac installations.
 11. Perform a real browser accessibility and interaction review.
 12. Preserve Git review history and require verification evidence for future changes.
@@ -598,11 +598,11 @@ Do not claim:
 
 ## 17. Final truth statement
 
-SentinelFX is a substantial, working local simulation and risk-control codebase with deterministic Decimal sizing, persistent safety state, a usable dashboard, webhook validation, an MT5 diagnostic boundary, atomic paper-decision persistence, backtesting/research tools and 142 passing tests.
+SentinelFX is a working local simulation and risk-control codebase with deterministic Decimal sizing, persistent safety state, a dashboard, webhook validation, isolated MT5 diagnostics, atomic paper-decision persistence, backup/restore, research tools and 170 passing tests.
 
 Its safety posture is intentionally conservative: live submission is impossible, real-terminal candidates are blocked, unknown evidence becomes NO_TRADE, and synthetic fixtures are labeled.
 
 It still requires significant integration, security, reconciliation, operational and real-world verification work before it could be considered a demo-connected trading control system, and much more before any live-execution discussion.
 
 
-Current pass: [FINAL_PRELIVE_REVIEW.md](FINAL_PRELIVE_REVIEW.md). Future gates: [PRELIVE_CHECKLIST.md](PRELIVE_CHECKLIST.md). Browser verification is still incomplete; this is not a production-readiness sign-off.
+Current pass: [SYSTEM_READINESS_REVIEW.md](SYSTEM_READINESS_REVIEW.md). Previous historical pass: [FINAL_PRELIVE_REVIEW.md](FINAL_PRELIVE_REVIEW.md). Future gates: [PRELIVE_CHECKLIST.md](PRELIVE_CHECKLIST.md). Browser verification is still incomplete; this is not a production-readiness sign-off.

@@ -1,12 +1,12 @@
 SENTINELFX — NEXT REVIEW
 
 Repository: https://github.com/Agent-X17/sentinelfx
-Read docs/FULL_PROJECT_REPORT.md, README.md, docs/VERIFICATION.md, docs/PRELIVE_CHECKLIST.md, docs/API.md and docs/REQUIREMENTS.md. Read the separate prompt assets without merging their roles.
+Read docs/SYSTEM_READINESS_REVIEW.md, docs/FULL_PROJECT_REPORT.md, README.md, docs/VERIFICATION.md, docs/PRELIVE_CHECKLIST.md, docs/API.md and docs/REQUIREMENTS.md. Read the separate prompt assets without merging their roles.
 
 Review the existing architecture in place. Default SIMULATION and all live refusals must remain. ACCOUNT_LIVE is a $300 simulation placeholder; it is not imported real equity. Real adapters return NO_TRADE; only explicit in-process simulation mocks traverse synthetic approval. Never remove the evidence gate to make a test pass.
 
 Run the full unittest suite, JavaScript syntax check, Python compilation and a clean temporary-database server. Verify all eight dashboard pages and the changed workflows. Preserve migrations and existing records. Do not reset suspensions or rewrite audit history.
 
-Prioritize remaining native-call isolation/timeouts, reconciliation design, independent evidence sources, backup/restore and production ingress controls. Read the checklist to distinguish implementations from missing controls. Do not claim live readiness, verified brokers/withdrawals, PostgreSQL support or profitable edge.
+Native diagnostic isolation/timeouts and verified SQLite backup/restore now exist. Prioritize reconciliation, native broker request translation, independent evidence adapters and production ingress controls. These still require software work, not just credentials. Do not claim connection-only readiness, verified brokers/withdrawals, PostgreSQL support or profitable edge.
 
 Report concrete changes, regression tests, exact verification results and remaining limitations. Keep live submission disabled.

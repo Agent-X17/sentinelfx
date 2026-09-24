@@ -8,7 +8,7 @@ Real MT5 reads are diagnostic only. External or unknown exposure blocks candidat
 
 Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
 
-Intake, paper reservation, journal and audit commit or roll back together. SQLite holds its write lock during adapter calls. Native-call timeouts and worker isolation are missing; a slow terminal can block writes. This remains a local single-user prototype.
+Real diagnostics are collected outside the SQLite write transaction. The server uses a separate diagnostic process with a five-second deadline and one active worker; timeout/failure/busy states block candidates. Intake is then revalidated and deduplicated inside an atomic transaction. Mock paper reservation, journal and audit still commit or roll back together. This remains a local single-user prototype; real execution and reconciliation are not implemented.
 
 See [the review report](FULL_PROJECT_REPORT.md) and [future release checklist](PRELIVE_CHECKLIST.md) for verification and remaining work.
 
@@ -85,3 +85,11 @@ Processed bridge responses contain:
 - 403: host/origin/CSRF rejection; 413: body limit; 503: unavailable bridge/storage or rollback.
 
 All bridge responses include `order_sent: false`; processed mock decisions additionally identify `SYNTHETIC_TEST_FIXTURE`. Dashboard decisions identify synthetic simulation or unverified evidence. HTTP sockets have a 10-second inactivity timeout; this does not cancel native MT5 calls.
+
+Native diagnostics have a separate five-second process deadline on the server.
+The low-level MT5Service alone has no such deadline. See
+[INTEGRATION_CONTRACT.md](INTEGRATION_CONTRACT.md) for versioned replay identity,
+legacy compatibility, diagnostic drift, process isolation and backup/recovery rules.
+Explicit empty/invalid expires_at is rejected. Duplicate JSON fields are rejected.
+Invalid deliveries have separate rejection identities and cannot reserve corrected
+alert IDs. Both body/header secret values are filtered when present.

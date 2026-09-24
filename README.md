@@ -8,9 +8,15 @@ Real MT5 reads are diagnostic only. External or unknown exposure blocks candidat
 
 Webhook credential fields are recursively filtered, including nested lists; known authentication-secret strings are filtered too. Arbitrary free text is not guaranteed secret-free. Do not submit credentials in metadata. Failed authentication cannot reserve legitimate alert IDs. Alert IDs take precedence; without an ID, a stable signal-field hash is used. Delivery headers cannot change replay identity.
 
-Intake, paper reservation, journal and audit commit or roll back together. SQLite holds its write lock during adapter calls. Native-call timeouts and worker isolation are missing; a slow terminal can block writes. This remains a local single-user prototype.
+Real diagnostics are collected outside the SQLite write transaction. The server uses a separate diagnostic process with a five-second deadline and one active worker; timeout/failure/busy states block candidates. Intake is then revalidated and deduplicated inside an atomic transaction. Mock paper reservation, journal and audit still commit or roll back together. This remains a local single-user prototype; real execution and reconciliation are not implemented.
 
 See [the review report](docs/FULL_PROJECT_REPORT.md) and [future release checklist](docs/PRELIVE_CHECKLIST.md) for verification and remaining work.
+
+Latest result: [SYSTEM_READINESS_REVIEW.md](docs/SYSTEM_READINESS_REVIEW.md).
+170 tests pass. This is ready for local simulation/diagnostic evaluation, not
+connection-only real trading rollout: reconciliation, native requests and evidence
+adapters still require a separate implementation/review. See
+[INTEGRATION_CONTRACT.md](docs/INTEGRATION_CONTRACT.md) before onboarding.
 
 
 SentinelFX is a working local decision-control application for small Forex accounts. It receives TradingView-style alerts, normalizes them, checks current MetaTrader 5 account and symbol facts when MT5 is enabled, applies deterministic risk rules, and records a paper/simulation decision with an audit trail.
@@ -23,7 +29,7 @@ The default mode is `SIMULATION`. Live order submission is not implemented: `MT5
 - Strict `RiskManager` veto rules and broker-grid `PositionSizer`.
 - Authenticated TradingView webhook intake, freshness checks, idempotency, symbol normalization and explicit broker-symbol mapping.
 - Optional read/check-only MT5 adapter for account, terminal, symbol, tick, positions, orders, history, rates, margin, profit and `order_check` operations.
-- Exact-size workflow: risk preview calculates a lot size, MT5 checks that exact size, and the risk engine re-evaluates before an atomic paper/simulation record is created.
+- Mock-only exact-size workflow: risk preview calculates a lot size, the explicit test adapter checks that size, and the risk engine re-evaluates before an atomic simulation record. Real MT5 diagnostics always remain blocked.
 - SQLite persistence with ordered migrations; the repository boundary is ready for a future PostgreSQL implementation.
 - Raw webhooks, normalized signals, broker/account snapshots, decisions, veto reasons, paper positions, provider state, journal entries and hash-chained audit logs.
 - Local dashboard for account state, loss budgets, broker research, provider state, signals, veto reasons, bridge activity, symbol mappings and audit history.
@@ -56,6 +62,10 @@ python3 -B manage.py init
 python3 -B manage.py audit
 python3 -B manage.py sample
 python3 -B manage.py backtest --input examples/synthetic-candles.json
+
+# Consistent backup and restore, each to a NEW destination path
+python3 -B manage.py backup --db data/engine.sqlite3 --output /path/to/new-backup.sqlite3
+python3 -B manage.py restore --db /path/to/new-backup.sqlite3 --output /path/to/new-restored.sqlite3
 ```
 
 ## Modes
@@ -96,7 +106,7 @@ Example local payload:
 }
 ```
 
-The secret may be supplied as `X-Webhook-Secret` or in the JSON payload. It is removed before persistence. TradingView must reach a public HTTPS receiver in real use, so a tunnel or deployed ingress is still needed. Only explicitly configured `WEBHOOK_ALLOWED_HOSTS` pass host validation. Set a strong secret whenever traffic can leave localhost.
+The secret may be supplied as `X-Webhook-Secret` or in the JSON payload. Both known secret values and credential-like fields are filtered before persistence. Arbitrary free text cannot be guaranteed secret-free. TradingView needs a public HTTPS receiver; none is deployed here. Explicit `WEBHOOK_ALLOWED_HOSTS` require a secret of at least 32 characters. Host validation is not production authentication.
 
 Missing or stale timestamps, missing stops, invalid numbers, unknown or ambiguous symbols, duplicate IDs, unavailable MT5 state and every risk violation return a structured `NO_TRADE` or blocked response.
 

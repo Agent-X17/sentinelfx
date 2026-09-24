@@ -24,15 +24,17 @@ def validate_diagnostics(signal, symbol, tick, account, now=None):
         for key in ('trade_contract_size', 'volume_min', 'volume_max', 'volume_step', 'point'):
             if decimal(symbol.get(key)) <= 0:
                 raise InvalidData(key)
-        if decimal(symbol['volume_min']) > decimal(symbol['volume_max']):
+        if decimal(symbol['volume_min']) > decimal(symbol['volume_max']) or decimal(symbol['volume_step']) > decimal(symbol['volume_max']):
             raise InvalidData('volume range')
+        if 'digits' in symbol and (type(symbol['digits']) is not int or not 0 <= symbol['digits'] <= 10 or decimal(symbol['point']) != Decimal(10) ** -symbol['digits']):
+            raise InvalidData('precision mismatch')
     except InvalidData:
         failures.append('MT5_SYMBOL_PROPERTIES_INVALID')
     if symbol.get('trade_mode') != 4:
         failures.append('MT5_SYMBOL_TRADE_MODE_RESTRICTED_OR_UNKNOWN')
     if account.get('currency') != 'USD':
         failures.append('MT5_ACCOUNT_CURRENCY_UNSUPPORTED_OR_UNKNOWN')
-    if not account.get('login') or not account.get('server'):
+    if type(account.get('login')) is not int or account['login'] <= 0 or not isinstance(account.get('server'),str) or not account['server'].strip():
         failures.append('MT5_ACCOUNT_IDENTITY_UNVERIFIED')
     if account.get('trade_allowed') is not True:
         failures.append('MT5_ACCOUNT_RESTRICTED_OR_UNKNOWN')
