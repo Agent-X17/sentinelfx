@@ -10,7 +10,7 @@ from engine.domain import stamp
 from engine.isolated_mt5 import IsolatedMT5Service,MockDiagnosticMT5Service
 from engine.service import Application
 from engine.webhook import SymbolMapper,TradingViewWebhookService,WebhookAuthenticator
-from server import seed_demo_activity,status_document
+from server import seed_demo_activity,status_document,webhook_diagnostics
 
 
 class OperatorTests(unittest.TestCase):
@@ -33,6 +33,7 @@ class OperatorTests(unittest.TestCase):
             result=bridge.ingest(payload,'test-secret')
             self.assertEqual(result['decision'],'NO_TRADE')
             self.assertEqual(result['reason'],'REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED')
+            self.assertEqual(result['block_source'],'MISSING_EXTERNAL_EVIDENCE')
             self.assertFalse(result['order_sent'])
             self.assertEqual(len(app.snapshot()['risk_checks']),1)
 
@@ -41,6 +42,7 @@ class OperatorTests(unittest.TestCase):
         result=service.reset_drift()
         self.assertTrue(result.ok);self.assertTrue(result.data['was_latched'])
         self.assertFalse(service._drift);self.assertIsNone(service._identity)
+        self.assertFalse(service.operational_state()['drift_latched'])
 
     def test_demo_seed_and_human_status(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -52,6 +54,13 @@ class OperatorTests(unittest.TestCase):
             self.assertIn('SentinelFX operator status',page)
             self.assertIn('Live execution',page)
             self.assertIn('/api/webhook/tradingview',page)
+
+    def test_webhook_diagnostics_explain_validation(self):
+        snapshot={'raw_webhooks':[{'received_at':'2026-01-01T00:00:00+00:00','status':'rejected','reason':'WEBHOOK_AUTH_FAILED'}],
+                  'audit':[{'timestamp':'2026-01-01T00:01:00+00:00','event':'WEBHOOK_DUPLICATE','payload':'{}'}]}
+        rows=webhook_diagnostics(snapshot)
+        self.assertEqual(rows[0]['replay_status'],'DUPLICATE')
+        self.assertEqual(rows[1]['secret_validation'],'FAILED')
 
 
 if __name__=='__main__': unittest.main()

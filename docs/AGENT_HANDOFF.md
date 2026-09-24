@@ -17,6 +17,7 @@ Operator additions from the final delivery pass:
 - `MT5_DIAGNOSTIC_MODE=disabled|mock|real` selects an explicit diagnostic boundary. `mock` is synthetic and is always stopped by `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`.
 - `scripts/test_webhook.py` creates a fresh local TradingView-style alert. External TradingView delivery still requires a separately installed HTTPS tunnel, a strong secret, and the exact `WEBHOOK_ALLOWED_HOSTS` value.
 - Real diagnostic identity drift can be reset only through the CSRF-protected local endpoint with an exact confirmation string. The request is written to the audit chain before the latch is cleared.
+- `scripts/acceptance_check.py` is the single current release gate. It creates its own timestamped database, exercises runtime and webhook failures, proves live refusal, and runs all tests last.
 
 See [the review report](FULL_PROJECT_REPORT.md) and [future release checklist](PRELIVE_CHECKLIST.md) for verification and remaining work.
 
@@ -40,6 +41,14 @@ Project root: the directory containing this file's parent `docs/` folder. Read `
 - `server.py`: localhost dashboard/API and authenticated webhook boundary.
 
 ## Verification commands
+
+Run the acceptance gate first:
+
+```sh
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
+```
+
+The current verified result is `176 tests` and `ACCEPTANCE RESULT: PASS`.
 
 ```sh
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m unittest discover -s tests -v

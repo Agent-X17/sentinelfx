@@ -10,6 +10,18 @@ python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradi
 
 The helper generates a unique alert ID and fresh UTC timestamps. In disabled MT5 mode, `MT5_DISABLED` is the expected fail-closed result. In mock diagnostic mode, `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED` is expected. Both prove intake without authorizing or sending an order. View the stored reason under **Signal decisions**.
 
+Intentional failure cases:
+
+```sh
+python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview --case bad-secret
+python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview --case stale
+python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview --case duplicate
+python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview --case missing-stop
+python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview --case unmapped
+```
+
+When the server has a configured secret, add `--secret "$TRADINGVIEW_WEBHOOK_SECRET"`. The dashboard's **Webhook diagnostics** table shows host, secret, required-field, mapping, replay, block-source, and exact-reason results.
+
 ## Real TradingView delivery through a tunnel
 
 TradingView cannot call `127.0.0.1`. It requires a public HTTPS URL. Install a trusted tunnel product such as Cloudflare Tunnel or ngrok separately. Copy only the hostname from the generated URL, without `https://` or a path.

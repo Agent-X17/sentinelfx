@@ -36,6 +36,12 @@ class HTTPTests(unittest.TestCase):
     def test_bad_host(self):
         with self.assertRaises(HTTPError) as ctx:self.request('/api/state',headers={'Host':'attacker.invalid'})
         self.assertEqual(ctx.exception.code,403)
+    def test_bad_webhook_host_is_audited(self):
+        before=len(self.app.snapshot()['audit'])
+        with self.assertRaises(HTTPError) as ctx:self.request('/api/webhook/tradingview',{}, {'Host':'attacker.invalid','X-CSRF-Token':''})
+        self.assertEqual(ctx.exception.code,403)
+        audit=self.app.snapshot()['audit']
+        self.assertEqual(len(audit),before+1);self.assertEqual(audit[0]['event'],'WEBHOOK_HOST_REJECTED')
     def test_no_live_endpoint(self):
         with self.assertRaises(HTTPError) as ctx:self.request('/api/execute',{})
         self.assertEqual(ctx.exception.code,404)

@@ -26,6 +26,15 @@ class TradingBridge:
             (raw_id, key, stamp(), status, reason, dumps(payload)),
         )
 
+    @staticmethod
+    def block_source(reason):
+        if reason=='DUPLICATE_WEBHOOK': return 'DUPLICATE_DETECTION'
+        if reason=='REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED': return 'MISSING_EXTERNAL_EVIDENCE'
+        if str(reason).startswith(('MT5_','BROKER_')): return 'MT5_DIAGNOSTICS'
+        if reason in ('SYSTEM_DISCONNECTED',): return 'SYSTEM_STATE'
+        if reason in ('WEBHOOK_AUTH_FAILED','SYMBOL_UNMAPPED','SYMBOL_AMBIGUOUS') or 'timestamp' in str(reason).lower() or 'stop_loss' in str(reason): return 'WEBHOOK_VALIDATION'
+        return 'RISK_ENGINE'
+
     def ingest(self, payload, secret=None, idempotency_key=None):
         # Real reads never authorize or reserve risk. Collect them without a DB
         # write lock, then validate and deduplicate again in the atomic commit.
@@ -57,7 +66,7 @@ class TradingBridge:
                 key = 'unauthenticated:' + raw_id
                 self._persist_raw(db, raw_id, key, payload, "rejected", "WEBHOOK_AUTH_FAILED")
                 Store.audit(db, "WEBHOOK_REJECTED", {"id": raw_id, "reason": "WEBHOOK_AUTH_FAILED"})
-            return {"accepted": False, "status": "rejected", "decision": "NO_TRADE", "reason": "WEBHOOK_AUTH_FAILED", "raw_webhook_id": raw_id}
+            return {"accepted": False, "status": "rejected", "decision": "NO_TRADE", "reason": "WEBHOOK_AUTH_FAILED", "block_source":"WEBHOOK_VALIDATION", "raw_webhook_id": raw_id}
 
         check = self.webhook_service.validate(original, idempotency_key)
         legacy_key = self.webhook_service.legacy_key(original) if check.accepted else ''
@@ -69,11 +78,11 @@ class TradingBridge:
             duplicate = db.execute("SELECT id FROM raw_webhooks WHERE idempotency_key IN (?,?)", (check.idempotency_key,legacy_key)).fetchone()
             if duplicate:
                 Store.audit(db, "WEBHOOK_DUPLICATE", {"existing_id": duplicate["id"], "idempotency_key": check.idempotency_key})
-                return {"accepted": False, "status": "duplicate", "decision": "NO_TRADE", "reason": "DUPLICATE_WEBHOOK", "raw_webhook_id": duplicate["id"]}
+                return {"accepted": False, "status": "duplicate", "decision": "NO_TRADE", "reason": "DUPLICATE_WEBHOOK", "block_source":"DUPLICATE_DETECTION", "raw_webhook_id": duplicate["id"]}
             self._persist_raw(db, raw_id, check.idempotency_key, payload, check.status, check.reason)
             Store.audit(db, "WEBHOOK_RECEIVED" if check.accepted else "WEBHOOK_REJECTED", {"id": raw_id, **check.to_dict()})
             if not check.accepted:
-                return {"accepted": False, "status": check.status, "decision": "NO_TRADE", "reason": check.reason, "raw_webhook_id": raw_id}
+                return {"accepted": False, "status": check.status, "decision": "NO_TRADE", "reason": check.reason, "block_source":"WEBHOOK_VALIDATION", "raw_webhook_id": raw_id}
 
         if self.settings.mode == "DISCONNECTED":
             return self._blocked(raw_id, check.signal, "SYSTEM_DISCONNECTED")
@@ -159,6 +168,7 @@ class TradingBridge:
             "final_decision": final,
             "direction": check.signal["direction"],
             "main_reason": decision["reason"],
+            "block_source": None if decision["decision"]=='APPROVED_SIMULATED_TRADE' else 'RISK_ENGINE',
             "main_risk": decision["blocking_factors"][0] if decision["blocking_factors"] else "Mode remains simulation/paper only",
             "mt5_validation_result": order_check,
             "risk_check_result": decision["validation_results"],
@@ -189,7 +199,7 @@ class TradingBridge:
         return {"accepted": True, "status": "processed", "raw_webhook_id": raw_id, "mt5": mt5_state.to_dict(), "decision": execution_decision, "decision_detail": decision}
 
     def _blocked(self, raw_id, signal, reason, mt5=None):
-        result = {"accepted": False, "status": "blocked", "decision": "NO_TRADE", "reason": reason, "raw_webhook_id": raw_id, "signal": signal, "mt5": mt5, "order_sent": False}
+        result = {"accepted": False, "status": "blocked", "decision": "NO_TRADE", "reason": reason, "block_source":self.block_source(reason), "raw_webhook_id": raw_id, "signal": signal, "mt5": mt5, "order_sent": False}
         result['evidence_source']='DIAGNOSTIC_ONLY_UNVERIFIED'
         result=redact(result,(self.authenticator.secret,))
         with self.application.store.transaction() as db:

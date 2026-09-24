@@ -1,4 +1,18 @@
-# Verification — 2026-09-24 system-readiness review
+# Verification
+
+## Current operational acceptance — 2026-09-24
+
+The current authoritative gate is:
+
+```sh
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
+```
+
+Verified result: `ACCEPTANCE RESULT: PASS`; **176 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. See [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md).
+
+Real Chromium automation is still blocked on this task host: Chrome exits before creating `DevToolsActivePort`, including with `--no-sandbox --disable-gpu`. The updated DOM fallback passed all eight pages, simulated open/close, webhook diagnostics, explicit block-source rendering, and no script errors. No visual-browser success is claimed.
+
+## Historical system-readiness review — 2026-09-24
 
 Base: 09adec9, fetched from GitHub prelive-hardening and confirmed current before changes.
 

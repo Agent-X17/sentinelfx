@@ -19,7 +19,7 @@ const assert = require('node:assert/strict');
       link.click();
       await until(()=>d.querySelector('#nav a[aria-current="page"]')?.getAttribute('href')===link.getAttribute('href'));
       assert(d.querySelector('h1'));
-      assert(d.querySelector('#main').textContent.includes('Connected broker decisions are blocked'));
+      assert(d.querySelector('#main').textContent.includes('LIVE EXECUTION DOES NOT EXIST'));
       console.log('PASS navigation',link.textContent.trim());
     }
     w.location.hash='#dashboard';
@@ -31,5 +31,9 @@ const assert = require('node:assert/strict');
     await until(()=>!d.querySelector('button[data-action="close"]'));
     assert.deepEqual(errors,[]);
     console.log('PASS simulated open/close; no DOM script errors');
+    w.location.hash='#signals';
+    await until(()=>d.querySelector('#main').textContent.includes('Webhook diagnostics'));
+    assert(d.querySelector('#main').textContent.includes('BLOCK SOURCE'));
+    console.log('PASS webhook diagnostics and explicit block-source UI');
   } finally { dom.window.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});

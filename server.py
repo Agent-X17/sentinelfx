@@ -7,6 +7,7 @@ import secrets
 import sqlite3
 import errno
 import sys
+import importlib.util
 from datetime import datetime, timezone
 from html import escape
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
@@ -35,10 +36,13 @@ def seed_demo_activity(application):
 
 def status_document(settings,mt5,port):
     state=mt5.status().to_dict() if mt5 else {'ok':False,'code':'MT5_UNCONFIGURED','message':'MT5 status unavailable'}
+    operational=mt5.operational_state() if mt5 and hasattr(mt5,'operational_state') else {}
     allowed=', '.join(settings.webhook_allowed_hosts) or 'localhost only'
     rows=(('System mode',settings.mode),('Database',str(Path(settings.database_path).resolve())),('Dashboard',f'http://127.0.0.1:{port}/'),
           ('TradingView webhook',f'http://127.0.0.1:{port}/api/webhook/tradingview'),('Webhook secret','configured' if settings.webhook_secret else 'not configured'),
-          ('Accepted external hosts',allowed),('MT5 diagnostic mode',settings.mt5_diagnostic_mode),('MT5 status',state['code']),('Live execution','DISABLED — not implemented'))
+          ('Accepted external hosts',allowed),('MT5 diagnostic mode',settings.mt5_diagnostic_mode),('MT5 status',state['code']),
+          ('Last diagnostic',operational.get('last_diagnostic_at') or 'none'),('Drift latch','ACTIVE' if operational.get('drift_latched') else 'clear'),
+          ('Paper-connected eligibility','NOT ELIGIBLE'),('Live execution','DISABLED — not implemented'))
     body=''.join(f'<tr><th>{escape(k)}</th><td>{escape(str(v))}</td></tr>' for k,v in rows)
     return ("<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
             "<title>SentinelFX status</title><link rel='stylesheet' href='/style.css'><main class='content'><section class='card'><h1>SentinelFX operator status</h1>"
@@ -51,6 +55,26 @@ def strict_object(pairs):
         if key in result: raise ValueError('Duplicate JSON field')
         result[key]=value
     return result
+
+def webhook_diagnostics(snapshot):
+    items=[]
+    for row in snapshot.get('raw_webhooks',[])[:20]:
+        reason=row.get('reason') or 'UNKNOWN'
+        items.append({'timestamp':row.get('received_at'),'status':row.get('status'),'reason':reason,
+            'block_source':TradingBridge.block_source(reason),'host_validation':'MATCHED',
+            'secret_validation':'FAILED' if reason=='WEBHOOK_AUTH_FAILED' else 'MATCHED',
+            'required_fields':'FAILED' if 'Missing fields' in reason or 'stop_loss' in reason else 'PASSED_OR_NOT_REACHED',
+            'symbol_mapping':'FAILED' if reason in ('SYMBOL_UNMAPPED','SYMBOL_AMBIGUOUS') else 'PASSED_OR_NOT_REACHED',
+            'replay_status':'DUPLICATE' if reason=='DUPLICATE_WEBHOOK' else 'UNIQUE_OR_NOT_REACHED'})
+    for row in snapshot.get('audit',[]):
+        if row.get('event') not in ('WEBHOOK_DUPLICATE','WEBHOOK_HOST_REJECTED'): continue
+        payload=json.loads(row['payload'])
+        reason='DUPLICATE_WEBHOOK' if row['event']=='WEBHOOK_DUPLICATE' else 'WEBHOOK_HOST_REJECTED'
+        items.append({'timestamp':row['timestamp'],'status':'duplicate' if reason=='DUPLICATE_WEBHOOK' else 'rejected','reason':reason,
+            'block_source':'DUPLICATE_DETECTION' if reason=='DUPLICATE_WEBHOOK' else 'WEBHOOK_VALIDATION',
+            'host_validation':'FAILED' if reason=='WEBHOOK_HOST_REJECTED' else 'MATCHED','secret_validation':'NOT_REACHED' if reason=='WEBHOOK_HOST_REJECTED' else 'MATCHED',
+            'required_fields':'NOT_REACHED','symbol_mapping':'NOT_REACHED','replay_status':'DUPLICATE' if reason=='DUPLICATE_WEBHOOK' else 'NOT_REACHED'})
+    return sorted(items,key=lambda item:item.get('timestamp') or '',reverse=True)[:20]
 
 def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
     token=secrets.token_urlsafe(32)
@@ -75,8 +99,14 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
             path=urlparse(self.path).path
             try:
                 runtime={'dashboard_url':f'http://127.0.0.1:{self.server.server_port}/','status_url':f'http://127.0.0.1:{self.server.server_port}/status','webhook_path':'/api/webhook/tradingview','local_webhook_url':f'http://127.0.0.1:{self.server.server_port}/api/webhook/tradingview'}
-                if path=='/api/state': return self.send(200,dict(app.snapshot(),csrf_token=token,mt5=(mt5.status().to_dict() if mt5 else None),settings=(settings.public() if settings else None),runtime=runtime))
-                if path=='/api/health': return self.send(200,{'ok':True,'mode':settings.mode if settings else 'SIMULATION','live_execution_enabled':False,'database_path':str(Path(settings.database_path).resolve()) if settings else None,'mt5_diagnostic_mode':settings.mt5_diagnostic_mode if settings else 'disabled','mt5':mt5.status().to_dict() if mt5 else None,'webhook':runtime})
+                mt5_status=mt5.status().to_dict() if mt5 else None
+                operational=mt5.operational_state() if mt5 and hasattr(mt5,'operational_state') else {}
+                if path=='/api/state':
+                    snapshot=app.snapshot(); diagnostics=webhook_diagnostics(snapshot)
+                    return self.send(200,dict(snapshot,csrf_token=token,mt5=mt5_status,mt5_operational=operational,settings=(settings.public() if settings else None),runtime=runtime,
+                        webhook_diagnostics=diagnostics,last_webhook_result=diagnostics[0] if diagnostics else None,last_safe_state_at=snapshot['audit'][0]['timestamp'] if snapshot.get('audit_integrity') and snapshot.get('audit') else None,
+                        readiness={'simulation':'READY','diagnostic':'SYNTHETIC' if settings and settings.mt5_diagnostic_mode=='mock' else 'DIAGNOSTIC_ONLY','account_reconciliation':'UNVERIFIED','snapshot_freshness':operational.get('snapshot_freshness','UNVERIFIED'),'external_evidence':'NOT_READY','paper_connected':'NOT_ELIGIBLE','live_execution':'UNAVAILABLE'}))
+                if path=='/api/health': return self.send(200,{'ok':True,'mode':settings.mode if settings else 'SIMULATION','live_execution_enabled':False,'database_path':str(Path(settings.database_path).resolve()) if settings else None,'mt5_diagnostic_mode':settings.mt5_diagnostic_mode if settings else 'disabled','mt5':mt5_status,'mt5_operational':operational,'webhook':runtime})
                 if path=='/api/mt5/status': return self.send(200,mt5.status().to_dict() if mt5 else {'ok':False,'code':'MT5_UNCONFIGURED'})
                 if path=='/status': return self.send(200,status_document(settings,mt5,self.server.server_port),'text/html; charset=utf-8')
                 if path=='/api/candle-sample': return self.send(200,json.loads((ROOT/'examples/synthetic-candles.json').read_text()))
@@ -91,7 +121,12 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
         def do_POST(self):
             path=urlparse(self.path).path
             is_webhook=path=='/api/webhook/tradingview'
-            if not self.valid_host(is_webhook): return self.send(403,{'error':'Invalid host'})
+            if not self.valid_host(is_webhook):
+                if is_webhook:
+                    try:
+                        with app.store.transaction() as db: Store.audit(db,'WEBHOOK_HOST_REJECTED',{'reason':'WEBHOOK_HOST_REJECTED','host_validation':'FAILED'})
+                    except Exception: pass
+                return self.send(403,{'error':'Invalid host','decision':'NO_TRADE','reason':'WEBHOOK_HOST_REJECTED','live_execution_enabled':False})
             if not is_webhook and self.headers.get('X-CSRF-Token')!=token:
                 return self.send(403,{'error':'Local session token required'})
             origin=self.headers.get('Origin')
@@ -197,8 +232,18 @@ def main():
     print(f'  Database:        {Path(settings.database_path).resolve()}',flush=True)
     print(f'  System mode:     {settings.mode}',flush=True)
     print(f'  MT5 diagnostics: {settings.mt5_diagnostic_mode}',flush=True)
+    native_available=importlib.util.find_spec('MetaTrader5') is not None
+    print(f'  MT5 host check:  {"package detected" if native_available else "package unavailable on this host"}',flush=True)
     print('  Live execution:  DISABLED (not implemented)',flush=True)
     print(f'  Webhook:         http://127.0.0.1:{server.server_port}/api/webhook/tradingview\n',flush=True)
+    print(f'  Webhook secret:  {"configured" if settings.webhook_secret else "NOT configured (localhost testing only)"}',flush=True)
+    print('  Allowed hosts:   '+(', '.join(settings.webhook_allowed_hosts) if settings.webhook_allowed_hosts else 'localhost only; set exact tunnel host for external delivery'),flush=True)
+    secret_arg=' --secret "$TRADINGVIEW_WEBHOOK_SECRET"' if settings.webhook_secret else ''
+    print('\nNext steps:',flush=True)
+    print(f'  1. Open dashboard: http://127.0.0.1:{server.server_port}/',flush=True)
+    print(f'  2. Check status:   http://127.0.0.1:{server.server_port}/status',flush=True)
+    print(f'  3. Test webhook:   python3 -B scripts/test_webhook.py --url http://127.0.0.1:{server.server_port}/api/webhook/tradingview{secret_arg}',flush=True)
+    print('  4. Inspect Overview, Signal decisions, and Audit trail.\n',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close();mt5.shutdown()

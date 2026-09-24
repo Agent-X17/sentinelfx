@@ -12,7 +12,7 @@ Real diagnostics are collected outside the SQLite write transaction. The server 
 
 See the [under-five-minute quick start](docs/QUICKSTART.md), [the review report](docs/FULL_PROJECT_REPORT.md), and [future release checklist](docs/PRELIVE_CHECKLIST.md).
 
-Latest result: [FINAL_OPERATIONAL_DELIVERY.md](docs/FINAL_OPERATIONAL_DELIVERY.md).
+Current release gate: [OPERATIONAL_ACCEPTANCE.md](docs/OPERATIONAL_ACCEPTANCE.md).
 The automated suite is the source of truth for the current test count. This is ready for local simulation/diagnostic evaluation, not
 connection-only real trading rollout: reconciliation, native requests and evidence
 adapters still require a separate implementation/review. See
@@ -47,6 +47,16 @@ python3 -B server.py --demo --port-fallback
 ```
 
 The default Mac experience needs only Python 3.9+ and a current browser. It runs with MT5 disabled and uses the existing simulator. If the browser says “connection refused,” the local server is not running; launch it again.
+
+### Operational acceptance check
+
+Run this single command before relying on a checkout for local testing:
+
+```sh
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
+```
+
+It creates a new timestamped demo database, starts an isolated mock-diagnostic server, checks status and health, runs valid and invalid webhook deliveries, verifies persisted dashboard/audit state, proves live startup/order/HTTP paths refuse, and runs the full test suite last. Trust only `ACCEPTANCE RESULT: PASS`; every stage prints an individual `PASS` or the script exits nonzero with `ACCEPTANCE RESULT: FAIL`.
 
 Useful commands:
 
@@ -116,6 +126,8 @@ Send a fresh local test alert without editing timestamps by hand:
 ```sh
 python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview
 ```
+
+Add `--case bad-secret`, `stale`, `duplicate`, `missing-stop`, or `unmapped` to reproduce a specific refusal. Each response includes `http_status`, `test_case`, the exact reason, and `NO_TRADE`.
 
 For an authenticated or tunneled instance, add `--secret "$TRADINGVIEW_WEBHOOK_SECRET"`. See [TRADINGVIEW_TESTING.md](docs/TRADINGVIEW_TESTING.md) for the exact host and HTTPS tunnel setup.
 

@@ -32,6 +32,16 @@ Stop the app with **Control-C** in its Terminal window. A â€œconnection refusedâ
 
 ## Verify it
 
+The release acceptance gate is the recommended check:
+
+```sh
+PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
+```
+
+Successful output ends with `ACCEPTANCE RESULT: PASS`. The temporary database path is printed and retained for inspection. See [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md) for its exact scope.
+
+Individual developer checks are:
+
 ```sh
 python3 -B -m unittest discover -s tests -v
 node --check static/app.js

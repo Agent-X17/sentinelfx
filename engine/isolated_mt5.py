@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime,timezone
 from pathlib import Path
 from .mt5 import MT5Result, MT5Service
 
@@ -35,10 +36,24 @@ class IsolatedMT5Service(MT5Service):
         self._lock=threading.Lock()
         self._identity=None
         self._drift=False
+        self._last_diagnostic_at=None
+        self._last_failure_reason=None
+
+    def _remember(self,data):
+        status=data.get('status',{}) if isinstance(data,dict) else {}
+        self._last_diagnostic_at=datetime.now(timezone.utc).isoformat()
+        self._last_failure_reason=None if status.get('ok') is True else status.get('code','MT5_DIAGNOSTIC_INVALID')
+        return data
+
+    def operational_state(self):
+        return {'diagnostic_mode':'real' if self.enabled else 'disabled','last_diagnostic_at':self._last_diagnostic_at,
+                'last_failure_reason':self._last_failure_reason,'drift_latched':self._drift,
+                'account_reconciled':False,'snapshot_freshness':'UNVERIFIED','external_evidence_ready':False,
+                'paper_connected_eligible':False}
 
     def snapshot(self,symbol=None):
         def failure(code,message):
-            return {'status':MT5Result(False,code,message).to_dict()}
+            return self._remember({'status':MT5Result(False,code,message).to_dict()})
         if not self.enabled:
             return failure('MT5_DISABLED','MT5 integration is disabled')
         if not self._lock.acquire(blocking=False):
@@ -61,7 +76,7 @@ class IsolatedMT5Service(MT5Service):
                 return failure('MT5_ACCOUNT_CHANGED','Account identity changed; review and restart required')
             if type(identity[0]) is int and identity[0]>0 and isinstance(identity[1],str) and identity[1].strip() and identity[2]=='USD':
                 self._identity=identity
-            return data
+            return self._remember(data)
         except subprocess.TimeoutExpired:
             return failure('MT5_TIMEOUT','Diagnostic worker exceeded its deadline and was terminated')
         except (subprocess.SubprocessError,OSError,ValueError,TypeError,AttributeError):
@@ -89,11 +104,11 @@ class MockDiagnosticMT5Service(MT5Service):
     real-evidence gate always returns NO_TRADE for its data.
     """
     diagnostic_mode='mock'
-    def __init__(self): super().__init__(enabled=True)
+    def __init__(self): super().__init__(enabled=True);self._last_diagnostic_at=None
     def snapshot(self,symbol=None):
         now=time.time(); name=symbol or 'EURUSD.a'
         ok=lambda code,message,data=None: MT5Result(True,code,message,data).to_dict()
-        return {
+        data={
             'status':ok('MT5_MOCK_DIAGNOSTIC','Synthetic diagnostic fixture; no terminal connected',{'synthetic_diagnostic':True}),
             'account_info':ok('MT5_OK','synthetic diagnostic account',{'login':900001,'server':'SENTINELFX-MOCK','currency':'USD','balance':300.0,'equity':300.0,'margin_free':300.0,'margin_level':1000.0,'trade_allowed':False,'synthetic_diagnostic':True}),
             'symbol_info':ok('MT5_OK','synthetic diagnostic symbol',{'name':name,'visible':True,'trade_mode':4,'volume_min':0.01,'volume_step':0.01,'volume_max':100.0,'trade_contract_size':100000.0,'point':0.00001,'digits':5,'synthetic_diagnostic':True}),
@@ -101,7 +116,13 @@ class MockDiagnosticMT5Service(MT5Service):
             'positions_get':ok('MT5_OK','synthetic diagnostic positions',{'items':[],'synthetic_diagnostic':True}),
             'orders_get':ok('MT5_OK','synthetic diagnostic orders',{'items':[],'synthetic_diagnostic':True}),
         }
+        self._last_diagnostic_at=datetime.now(timezone.utc).isoformat()
+        return data
     def initialize(self): return self.status()
     def status(self): return SnapshotMT5(self.snapshot()).status()
     def shutdown(self): pass
     def reset_drift(self): return MT5Result(True,'MT5_DIAGNOSTIC_RESET','Mock diagnostics have no drift latch',{'was_latched':False})
+    def operational_state(self):
+        return {'diagnostic_mode':'mock','last_diagnostic_at':self._last_diagnostic_at,'last_failure_reason':None,
+                'drift_latched':False,'account_reconciled':False,'snapshot_freshness':'SYNTHETIC_ONLY',
+                'external_evidence_ready':False,'paper_connected_eligible':False}
