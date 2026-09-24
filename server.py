@@ -7,6 +7,8 @@ import secrets
 import sqlite3
 import errno
 import sys
+from datetime import datetime, timezone
+from html import escape
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
@@ -18,12 +20,30 @@ from engine.storage import Store,dumps
 from engine.research import BacktestingService,CandleBacktestingService
 from engine.config import Settings
 from engine.mt5 import MT5Service
-from engine.isolated_mt5 import IsolatedMT5Service
+from engine.isolated_mt5 import IsolatedMT5Service,MockDiagnosticMT5Service
 from engine.webhook import TradingViewWebhookService, WebhookAuthenticator, SymbolMapper
 from engine.bridge import TradingBridge
 from engine.redaction import redact
 
 ROOT=Path(__file__).resolve().parent
+
+def seed_demo_activity(application):
+    """Add clearly labelled synthetic decisions to a brand-new demo database."""
+    for profile,scenario in (('ACCOUNT_A','safe'),('ACCOUNT_B','standard'),('ACCOUNT_C','stale')):
+        signal,market=sample_signal(scenario)
+        application.evaluate({'account_profile':profile,'broker_id':'demo-standard' if scenario=='standard' else 'demo-cent','signal':signal,'market':market})
+
+def status_document(settings,mt5,port):
+    state=mt5.status().to_dict() if mt5 else {'ok':False,'code':'MT5_UNCONFIGURED','message':'MT5 status unavailable'}
+    allowed=', '.join(settings.webhook_allowed_hosts) or 'localhost only'
+    rows=(('System mode',settings.mode),('Database',str(Path(settings.database_path).resolve())),('Dashboard',f'http://127.0.0.1:{port}/'),
+          ('TradingView webhook',f'http://127.0.0.1:{port}/api/webhook/tradingview'),('Webhook secret','configured' if settings.webhook_secret else 'not configured'),
+          ('Accepted external hosts',allowed),('MT5 diagnostic mode',settings.mt5_diagnostic_mode),('MT5 status',state['code']),('Live execution','DISABLED — not implemented'))
+    body=''.join(f'<tr><th>{escape(k)}</th><td>{escape(str(v))}</td></tr>' for k,v in rows)
+    return ("<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+            "<title>SentinelFX status</title><link rel='stylesheet' href='/style.css'><main class='content'><section class='card'><h1>SentinelFX operator status</h1>"
+            "<p><strong>Live order submission is disabled.</strong> This page reports local simulation and diagnostic state.</p><table>"+body+
+            "</table><p><a href='/'>Open dashboard</a> · <a href='/api/health'>JSON health</a></p></section></main></html>").encode()
 
 def strict_object(pairs):
     result={}
@@ -54,9 +74,11 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
             if not self.valid_host(): return self.send(403,{'error':'Invalid host'})
             path=urlparse(self.path).path
             try:
-                if path=='/api/state': return self.send(200,dict(app.snapshot(),csrf_token=token,mt5=(mt5.status().to_dict() if mt5 else None),settings=(settings.public() if settings else None)))
-                if path=='/api/health': return self.send(200,{'ok':True,'mode':settings.mode if settings else 'SIMULATION','live_execution_enabled':False,'mt5':mt5.status().to_dict() if mt5 else None})
+                runtime={'dashboard_url':f'http://127.0.0.1:{self.server.server_port}/','status_url':f'http://127.0.0.1:{self.server.server_port}/status','webhook_path':'/api/webhook/tradingview','local_webhook_url':f'http://127.0.0.1:{self.server.server_port}/api/webhook/tradingview'}
+                if path=='/api/state': return self.send(200,dict(app.snapshot(),csrf_token=token,mt5=(mt5.status().to_dict() if mt5 else None),settings=(settings.public() if settings else None),runtime=runtime))
+                if path=='/api/health': return self.send(200,{'ok':True,'mode':settings.mode if settings else 'SIMULATION','live_execution_enabled':False,'database_path':str(Path(settings.database_path).resolve()) if settings else None,'mt5_diagnostic_mode':settings.mt5_diagnostic_mode if settings else 'disabled','mt5':mt5.status().to_dict() if mt5 else None,'webhook':runtime})
                 if path=='/api/mt5/status': return self.send(200,mt5.status().to_dict() if mt5 else {'ok':False,'code':'MT5_UNCONFIGURED'})
+                if path=='/status': return self.send(200,status_document(settings,mt5,self.server.server_port),'text/html; charset=utf-8')
                 if path=='/api/candle-sample': return self.send(200,json.loads((ROOT/'examples/synthetic-candles.json').read_text()))
                 if path=='/api/sample':
                     s,m=sample_signal();return self.send(200,{'account_profile':'ACCOUNT_A','broker_id':'demo-cent','signal':s,'market':m})
@@ -117,6 +139,10 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                     result=(CandleBacktestingService if 'candles' in payload else BacktestingService).run(payload);result.update(id=str(uuid4()),created_at=stamp(),strategy_id=payload.get('strategy_id','manual'))
                     with app.store.transaction() as db:
                         db.execute('INSERT INTO backtests VALUES(?,?,?)',(result['id'],result['strategy_id'],dumps(result)));Store.audit(db,'BACKTEST_RECORDED',result)
+                elif path=='/api/mt5/reset-drift':
+                    if payload.get('confirm')!='RESET_DIAGNOSTIC_LATCH' or not hasattr(mt5,'reset_drift'): raise InvalidData('Explicit diagnostic reset confirmation required')
+                    with app.store.transaction() as db: Store.audit(db,'MT5_DIAGNOSTIC_RESET_REQUESTED',{'mode':settings.mt5_diagnostic_mode,'reason':payload.get('reason','Operator review')})
+                    result=mt5.reset_drift().to_dict()
                 else: return self.send(404,{'error':'No such operation; live execution is unavailable'})
                 self.send(200,result)
             except (InvalidData,ValueError,TypeError,KeyError) as exc:
@@ -146,18 +172,33 @@ def bind_server(application, port, bridge, mt5, settings, fallback=False):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--db');parser.add_argument('--policy');parser.add_argument('--port-fallback',action='store_true')
+    parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--db');parser.add_argument('--policy');parser.add_argument('--port-fallback',action='store_true');parser.add_argument('--demo',action='store_true',help='create a fresh database with synthetic example decisions')
     args=parser.parse_args()
+    if args.demo:
+        if args.db:
+            demo_path=Path(args.db)
+            if demo_path.exists(): raise InvalidData('--demo refuses to overwrite an existing database')
+        else:
+            demo_path=ROOT/'data'/('demo-'+datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')+'.sqlite3')
+        args.db=str(demo_path)
     settings=Settings.from_env(ROOT,args.db)
     policy=Policy(**json.loads(Path(args.policy).read_text())) if args.policy else Policy()
     application=Application(settings.database_path,policy,settings)
-    mt5=IsolatedMT5Service(settings.mt5_enabled,settings.mt5_terminal_path)
+    if args.demo: seed_demo_activity(application)
+    mt5=MockDiagnosticMT5Service() if settings.mt5_diagnostic_mode=='mock' else IsolatedMT5Service(settings.mt5_diagnostic_mode=='real',settings.mt5_terminal_path)
     if settings.mt5_enabled: mt5.initialize()
     with application.store.connect() as db: mappings=Store.symbol_mappings(db)
     webhook=TradingViewWebhookService(SymbolMapper(mappings),settings.webhook_max_age_seconds)
     bridge=TradingBridge(application,webhook,WebhookAuthenticator(settings.webhook_secret),mt5,settings)
     server=bind_server(application,args.port,bridge,mt5,settings,args.port_fallback)
-    print(f'SentinelFX • http://127.0.0.1:{server.server_port} • {settings.mode}',flush=True)
+    print('\nSentinelFX is ready',flush=True)
+    print(f'  Dashboard:       http://127.0.0.1:{server.server_port}/',flush=True)
+    print(f'  Status page:     http://127.0.0.1:{server.server_port}/status',flush=True)
+    print(f'  Database:        {Path(settings.database_path).resolve()}',flush=True)
+    print(f'  System mode:     {settings.mode}',flush=True)
+    print(f'  MT5 diagnostics: {settings.mt5_diagnostic_mode}',flush=True)
+    print('  Live execution:  DISABLED (not implemented)',flush=True)
+    print(f'  Webhook:         http://127.0.0.1:{server.server_port}/api/webhook/tradingview\n',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close();mt5.shutdown()

@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from .mt5 import MT5Result, MT5Service
 
@@ -27,6 +28,7 @@ class SnapshotMT5:
 
 
 class IsolatedMT5Service(MT5Service):
+    diagnostic_mode='real'
     def __init__(self, enabled=False, terminal_path='', timeout=5):
         super().__init__(enabled,terminal_path)
         self.timeout=timeout
@@ -70,3 +72,36 @@ class IsolatedMT5Service(MT5Service):
     def initialize(self): return self.status()
     def status(self): return SnapshotMT5(self.snapshot()).status()
     def shutdown(self): pass  # Each worker owns and closes its own terminal connection.
+
+    def reset_drift(self):
+        """Clear only the in-memory diagnostic identity latch after an audited review."""
+        with self._lock:
+            was_latched=self._drift
+            self._drift=False
+            self._identity=None
+        return MT5Result(True,'MT5_DIAGNOSTIC_RESET','Diagnostic identity latch cleared',{'was_latched':was_latched})
+
+
+class MockDiagnosticMT5Service(MT5Service):
+    """Synthetic read-only diagnostics for local operator testing.
+
+    This is deliberately a different type from MockMT5Service, so TradingBridge's
+    real-evidence gate always returns NO_TRADE for its data.
+    """
+    diagnostic_mode='mock'
+    def __init__(self): super().__init__(enabled=True)
+    def snapshot(self,symbol=None):
+        now=time.time(); name=symbol or 'EURUSD.a'
+        ok=lambda code,message,data=None: MT5Result(True,code,message,data).to_dict()
+        return {
+            'status':ok('MT5_MOCK_DIAGNOSTIC','Synthetic diagnostic fixture; no terminal connected',{'synthetic_diagnostic':True}),
+            'account_info':ok('MT5_OK','synthetic diagnostic account',{'login':900001,'server':'SENTINELFX-MOCK','currency':'USD','balance':300.0,'equity':300.0,'margin_free':300.0,'margin_level':1000.0,'trade_allowed':False,'synthetic_diagnostic':True}),
+            'symbol_info':ok('MT5_OK','synthetic diagnostic symbol',{'name':name,'visible':True,'trade_mode':4,'volume_min':0.01,'volume_step':0.01,'volume_max':100.0,'trade_contract_size':100000.0,'point':0.00001,'digits':5,'synthetic_diagnostic':True}),
+            'symbol_info_tick':ok('MT5_OK','synthetic diagnostic quote',{'time':now,'bid':1.0999,'ask':1.1001,'synthetic_diagnostic':True}),
+            'positions_get':ok('MT5_OK','synthetic diagnostic positions',{'items':[],'synthetic_diagnostic':True}),
+            'orders_get':ok('MT5_OK','synthetic diagnostic orders',{'items':[],'synthetic_diagnostic':True}),
+        }
+    def initialize(self): return self.status()
+    def status(self): return SnapshotMT5(self.snapshot()).status()
+    def shutdown(self): pass
+    def reset_drift(self): return MT5Result(True,'MT5_DIAGNOSTIC_RESET','Mock diagnostics have no drift latch',{'was_latched':False})

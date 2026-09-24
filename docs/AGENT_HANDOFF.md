@@ -10,6 +10,14 @@ Webhook credential fields are recursively filtered, including nested lists; know
 
 Real diagnostics are collected outside the SQLite write transaction. The server uses a separate diagnostic process with a five-second deadline and one active worker; timeout/failure/busy states block candidates. Intake is then revalidated and deduplicated inside an atomic transaction. Mock paper reservation, journal and audit still commit or roll back together. This remains a local single-user prototype; real execution and reconciliation are not implemented.
 
+Operator additions from the final delivery pass:
+
+- `python3 -B server.py --demo --port-fallback` creates a fresh timestamped database with three synthetic decisions and prints every relevant URL and runtime fact.
+- `/status` is a human-readable local status page; `/api/health` is the machine-readable version.
+- `MT5_DIAGNOSTIC_MODE=disabled|mock|real` selects an explicit diagnostic boundary. `mock` is synthetic and is always stopped by `REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED`.
+- `scripts/test_webhook.py` creates a fresh local TradingView-style alert. External TradingView delivery still requires a separately installed HTTPS tunnel, a strong secret, and the exact `WEBHOOK_ALLOWED_HOSTS` value.
+- Real diagnostic identity drift can be reset only through the CSRF-protected local endpoint with an exact confirmation string. The request is written to the audit chain before the latch is cleared.
+
 See [the review report](FULL_PROJECT_REPORT.md) and [future release checklist](PRELIVE_CHECKLIST.md) for verification and remaining work.
 
 
@@ -39,11 +47,11 @@ node --check static/app.js
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m py_compile server.py manage.py engine/*.py tests/*.py
 ```
 
-Start a clean instance:
+Start a clean, populated instance:
 
 ```sh
-SYSTEM_MODE=SIMULATION MT5_ENABLED=false LIVE_EXECUTION_ENABLED=false \
-python3 -B server.py --port 8765 --db /tmp/sentinelfx-agent-review.sqlite3
+SYSTEM_MODE=SIMULATION MT5_DIAGNOSTIC_MODE=mock LIVE_EXECUTION_ENABLED=false \
+python3 -B server.py --demo --port 8765
 ```
 
 Then open `http://127.0.0.1:8765/` and verify Overview, Account simulator, Broker comparison, Provider research, Signal decisions, Research library, Withdrawal tests and Audit trail.

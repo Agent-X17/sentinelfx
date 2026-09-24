@@ -1,0 +1,57 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from engine.bridge import TradingBridge
+from engine.config import Settings
+from engine.domain import stamp
+from engine.isolated_mt5 import IsolatedMT5Service,MockDiagnosticMT5Service
+from engine.service import Application
+from engine.webhook import SymbolMapper,TradingViewWebhookService,WebhookAuthenticator
+from server import seed_demo_activity,status_document
+
+
+class OperatorTests(unittest.TestCase):
+    def test_diagnostic_mode_configuration(self):
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'MT5_DIAGNOSTIC_MODE':'mock'},clear=True):
+            settings=Settings.from_env(Path(folder))
+            self.assertEqual(settings.mt5_diagnostic_mode,'mock')
+            self.assertTrue(settings.mt5_enabled)
+            self.assertFalse(settings.live_execution_enabled)
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'MT5_DIAGNOSTIC_MODE':'invalid'},clear=True):
+            with self.assertRaisesRegex(Exception,'disabled, mock, or real'): Settings.from_env(Path(folder))
+
+    def test_mock_diagnostic_is_evidence_gated(self):
+        with tempfile.TemporaryDirectory() as folder:
+            settings=Settings(database_path=folder+'/db',webhook_secret='test-secret',mt5_enabled=True,mt5_diagnostic_mode='mock')
+            app=Application(settings.database_path,settings=settings)
+            with app.store.connect() as db:mappings=__import__('engine.storage',fromlist=['Store']).Store.symbol_mappings(db)
+            bridge=TradingBridge(app,TradingViewWebhookService(SymbolMapper(mappings)),WebhookAuthenticator('test-secret'),MockDiagnosticMT5Service(),settings)
+            payload={'alert_id':'operator-mock-1','symbol':'OANDA:EUR/USD','side':'BUY','timeframe':'H1','strategy':'diagnostic test','timestamp':stamp(),'entry':'1.1001','stop_loss':'1.0980','take_profit':'1.1045'}
+            result=bridge.ingest(payload,'test-secret')
+            self.assertEqual(result['decision'],'NO_TRADE')
+            self.assertEqual(result['reason'],'REQUIRED_EXTERNAL_EVIDENCE_UNVERIFIED')
+            self.assertFalse(result['order_sent'])
+            self.assertEqual(len(app.snapshot()['risk_checks']),1)
+
+    def test_drift_reset_clears_identity_and_latch(self):
+        service=IsolatedMT5Service(True);service._identity=(1,'demo','USD');service._drift=True
+        result=service.reset_drift()
+        self.assertTrue(result.ok);self.assertTrue(result.data['was_latched'])
+        self.assertFalse(service._drift);self.assertIsNone(service._identity)
+
+    def test_demo_seed_and_human_status(self):
+        with tempfile.TemporaryDirectory() as folder:
+            settings=Settings(database_path=folder+'/demo.sqlite3')
+            app=Application(settings.database_path,settings=settings);seed_demo_activity(app)
+            snapshot=app.snapshot()
+            self.assertEqual(len(snapshot['decisions']),3)
+            page=status_document(settings,MockDiagnosticMT5Service(),8765).decode()
+            self.assertIn('SentinelFX operator status',page)
+            self.assertIn('Live execution',page)
+            self.assertIn('/api/webhook/tradingview',page)
+
+
+if __name__=='__main__': unittest.main()

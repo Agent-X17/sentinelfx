@@ -10,10 +10,10 @@ Webhook credential fields are recursively filtered, including nested lists; know
 
 Real diagnostics are collected outside the SQLite write transaction. The server uses a separate diagnostic process with a five-second deadline and one active worker; timeout/failure/busy states block candidates. Intake is then revalidated and deduplicated inside an atomic transaction. Mock paper reservation, journal and audit still commit or roll back together. This remains a local single-user prototype; real execution and reconciliation are not implemented.
 
-See [the review report](docs/FULL_PROJECT_REPORT.md) and [future release checklist](docs/PRELIVE_CHECKLIST.md) for verification and remaining work.
+See the [under-five-minute quick start](docs/QUICKSTART.md), [the review report](docs/FULL_PROJECT_REPORT.md), and [future release checklist](docs/PRELIVE_CHECKLIST.md).
 
-Latest result: [SYSTEM_READINESS_REVIEW.md](docs/SYSTEM_READINESS_REVIEW.md).
-170 tests pass. This is ready for local simulation/diagnostic evaluation, not
+Latest result: [FINAL_OPERATIONAL_DELIVERY.md](docs/FINAL_OPERATIONAL_DELIVERY.md).
+The automated suite is the source of truth for the current test count. This is ready for local simulation/diagnostic evaluation, not
 connection-only real trading rollout: reconciliation, native requests and evidence
 adapters still require a separate implementation/review. See
 [INTEGRATION_CONTRACT.md](docs/INTEGRATION_CONTRACT.md) before onboarding.
@@ -37,13 +37,13 @@ The default mode is `SIMULATION`. Live order submission is not implemented: `MT5
 
 ## Start locally on a Mac
 
-Double-click `Start SentinelFX.command`, keep its Terminal window open, and open the localhost address printed in Terminal. It normally uses port 8765; if occupied, the launcher chooses an available port.
+Double-click `Start SentinelFX.command`, keep its Terminal window open, and open the dashboard address printed in Terminal. The launcher creates a new timestamped demo database and three synthetic example decisions, so the first dashboard is useful immediately. It normally uses port 8765; if occupied, it chooses an available port.
 
 Or run:
 
 ```sh
 cd /path/to/forex-engine
-python3 -B server.py
+python3 -B server.py --demo --port-fallback
 ```
 
 The default Mac experience needs only Python 3.9+ and a current browser. It runs with MT5 disabled and uses the existing simulator. If the browser says “connection refused,” the local server is not running; launch it again.
@@ -53,6 +53,9 @@ Useful commands:
 ```sh
 # Clean, separate practice database
 python3 -B server.py --port 8877 --db data/practice.sqlite3
+
+# Safe end-to-end diagnostic mode (synthetic MT5 reads, always evidence-gated)
+MT5_DIAGNOSTIC_MODE=mock python3 -B server.py --demo --port-fallback
 
 # Complete automated suite
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m unittest discover -s tests -v
@@ -73,7 +76,7 @@ python3 -B manage.py restore --db /path/to/new-backup.sqlite3 --output /path/to/
 | Mode | MT5 required | Behavior |
 |---|---:|---|
 | `DISCONNECTED` | No | Dashboard/research available; webhook candidates stop. |
-| `SIMULATION` | No | Default local simulator. An enabled MT5 adapter provides diagnostics; real candidates remain blocked. |
+| `SIMULATION` | No | Default local simulator. Optional mock/real MT5 diagnostics remain evidence-gated. |
 | `PAPER_TRADING` | Yes | Requires MT5 enabled; real candidates remain blocked, not paper-approved. |
 | `LIVE_DISABLED` | Yes | Connected validation mode with live submission still unavailable. |
 | `LIVE_GATED` | N/A | Startup is refused in this release. |
@@ -108,15 +111,29 @@ Example local payload:
 
 The secret may be supplied as `X-Webhook-Secret` or in the JSON payload. Both known secret values and credential-like fields are filtered before persistence. Arbitrary free text cannot be guaranteed secret-free. TradingView needs a public HTTPS receiver; none is deployed here. Explicit `WEBHOOK_ALLOWED_HOSTS` require a secret of at least 32 characters. Host validation is not production authentication.
 
+Send a fresh local test alert without editing timestamps by hand:
+
+```sh
+python3 -B scripts/test_webhook.py --url http://127.0.0.1:8765/api/webhook/tradingview
+```
+
+For an authenticated or tunneled instance, add `--secret "$TRADINGVIEW_WEBHOOK_SECRET"`. See [TRADINGVIEW_TESTING.md](docs/TRADINGVIEW_TESTING.md) for the exact host and HTTPS tunnel setup.
+
 Missing or stale timestamps, missing stops, invalid numbers, unknown or ambiguous symbols, duplicate IDs, unavailable MT5 state and every risk violation return a structured `NO_TRADE` or blocked response.
 
 ## Optional MT5 validation
 
-Set:
+Choose one diagnostic mode. `mock` is synthetic and works locally; it exercises the same intake and diagnostic presentation but can never satisfy the external-evidence gate:
+
+```sh
+MT5_DIAGNOSTIC_MODE=mock python3 -B server.py --demo --port-fallback
+```
+
+On a supported MT5 host, set:
 
 ```sh
 export SYSTEM_MODE=PAPER_TRADING
-export MT5_ENABLED=true
+export MT5_DIAGNOSTIC_MODE=real
 export MT5_TERMINAL_PATH='/path/to/terminal'
 export TRADINGVIEW_WEBHOOK_SECRET='a-long-random-secret'
 python3 -B server.py

@@ -6,6 +6,7 @@ import os
 from .domain import InvalidData, PROFILES
 
 SYSTEM_MODES = {"DISCONNECTED", "SIMULATION", "PAPER_TRADING", "LIVE_DISABLED", "LIVE_GATED"}
+MT5_DIAGNOSTIC_MODES = {"disabled", "mock", "real"}
 
 
 def _bool(value: str, default: bool = False) -> bool:
@@ -28,6 +29,7 @@ class Settings:
     webhook_max_age_seconds: int = 300
     mt5_terminal_path: str = ""
     mt5_enabled: bool = False
+    mt5_diagnostic_mode: str = "disabled"
     live_execution_enabled: bool = False
     explicit_order_confirmation_required: bool = True
     default_account_profile: str = "ACCOUNT_LIVE"
@@ -37,6 +39,8 @@ class Settings:
         mode = os.environ.get("SYSTEM_MODE", "SIMULATION").strip().upper()
         if mode not in SYSTEM_MODES:
             raise InvalidData("Unknown SYSTEM_MODE")
+        legacy_mt5_enabled = _bool(os.environ.get("MT5_ENABLED"), False)
+        diagnostic_mode = os.environ.get("MT5_DIAGNOSTIC_MODE", "real" if legacy_mt5_enabled else "disabled").strip().lower()
         settings = cls(
             mode=mode,
             database_path=database_override or os.environ.get("DATABASE_PATH", str(root / "data" / "engine.sqlite3")),
@@ -44,7 +48,8 @@ class Settings:
             webhook_allowed_hosts=tuple(item.strip().lower() for item in os.environ.get("WEBHOOK_ALLOWED_HOSTS", "").split(",") if item.strip()),
             webhook_max_age_seconds=int(os.environ.get("WEBHOOK_MAX_AGE_SECONDS", "300")),
             mt5_terminal_path=os.environ.get("MT5_TERMINAL_PATH", ""),
-            mt5_enabled=_bool(os.environ.get("MT5_ENABLED"), False),
+            mt5_enabled=diagnostic_mode != "disabled",
+            mt5_diagnostic_mode=diagnostic_mode,
             live_execution_enabled=_bool(os.environ.get("LIVE_EXECUTION_ENABLED"), False),
             explicit_order_confirmation_required=_bool(os.environ.get("EXPLICIT_ORDER_CONFIRMATION_REQUIRED"), True),
             default_account_profile=os.environ.get("DEFAULT_ACCOUNT_PROFILE", "ACCOUNT_LIVE"),
@@ -57,6 +62,8 @@ class Settings:
             raise InvalidData('Unknown DEFAULT_ACCOUNT_PROFILE')
         if self.mode not in SYSTEM_MODES:
             raise InvalidData('Unknown SYSTEM_MODE')
+        if self.mt5_diagnostic_mode not in MT5_DIAGNOSTIC_MODES:
+            raise InvalidData('MT5_DIAGNOSTIC_MODE must be disabled, mock, or real')
         if self.webhook_allowed_hosts and not self.webhook_secret:
             raise InvalidData('External webhook hosts require a secret')
         if self.webhook_allowed_hosts and len(self.webhook_secret.strip()) < 32:
@@ -74,4 +81,5 @@ class Settings:
     def public(self):
         data = asdict(self)
         data["webhook_secret_configured"] = bool(data.pop("webhook_secret"))
+        data["mt5_terminal_path_configured"] = bool(data.pop("mt5_terminal_path"))
         return data
