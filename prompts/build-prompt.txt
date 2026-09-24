@@ -1,0 +1,451 @@
+1. BUILD PROMPT
+==================================================
+
+You are building a production-style local application that implements my forex agent system exactly according to the master prompt I already provided.
+
+IMPORTANT:
+- Preserve the original intent, safety model, and strict risk-first behavior from my master prompt.
+- Improve implementation quality; do not weaken or simplify the protection logic.
+- Build the real system around my actual workflow:
+  TradingView -> webhook/bridge -> internal forex agent/risk engine -> MT5 -> broker account
+- Keep live trading disabled by default.
+- Demo / paper / simulation must be the default mode.
+- Do not connect any real broker credentials automatically.
+- Do not place live trades unless a future explicit configuration enables it and all safety gates pass.
+
+PROJECT NAME
+Small Capital Forex Research & Risk Engine
+
+PRIMARY GOAL
+Build a local-first forex research, decision-support, simulation, and controlled-execution platform for a small account.
+This system must help the user learn, analyze, validate setups, control risk, simulate behavior, and only allow a trade when all safety conditions agree.
+
+CORE DESIGN PRINCIPLE
+The system must behave like a professional, safety-first forex research and execution-validation engine.
+It must not behave like a hype bot, blind signal copier, martingale engine, or reckless auto-executor.
+
+WORKING STACK
+The system will use:
+- TradingView for charts, Pine Script logic, and alerts
+- a webhook or bridge layer to receive TradingView alerts
+- a Python backend for the agent, risk engine, validation, journaling, and orchestration
+- MetaTrader 5 for account data, broker symbol specs, order validation, and optional controlled execution
+- SQLite for persistence
+- a local web dashboard UI for monitoring and review
+
+BUILD A REAL APPLICATION
+Create the full project inside a clean repository with:
+- readable folder structure
+- clear README
+- environment configuration
+- safe defaults
+- tests
+- migrations or schema initialization
+- sample data
+- simulation mode
+- audit logging
+- dashboard
+- broker/MT5 abstraction layer
+- TradingView webhook intake
+- risk engine
+- signal deduplication
+- backtesting / replay support
+- no-trade / veto logic
+- paper-trade lifecycle support
+
+REQUIRED ARCHITECTURE
+Build the app with these major modules:
+
+1. WEBHOOK INTAKE LAYER
+- Accept TradingView webhook alerts by HTTP POST
+- Support JSON payloads
+- Validate payload structure strictly
+- Reject malformed or incomplete payloads
+- Store the raw alert
+- Parse useful fields such as:
+  - symbol
+  - side or direction
+  - timeframe
+  - strategy/setup name
+  - alert timestamp
+  - optional entry / stop / target
+  - source platform
+  - metadata
+- Support alert authentication or shared secret if configured
+- Support idempotency protection and duplicate detection
+- Log every received webhook with status
+
+2. SIGNAL NORMALIZATION LAYER
+- Normalize TradingView symbols to internal canonical symbols
+- Provide MT5 symbol mapping support
+- Handle broker suffix/prefix issues
+- Mark alerts as:
+  - valid
+  - duplicate
+  - stale
+  - malformed
+  - unmapped
+  - waiting_for_validation
+- Never allow unmapped or ambiguous symbols to proceed to execution approval
+
+3. MT5 INTEGRATION LAYER
+Build an MT5 service wrapper with clear interfaces for:
+- initialize / shutdown
+- account_info
+- terminal_info if useful
+- symbol_info
+- symbol_select
+- symbol_info_tick
+- copy_rates_from / range if used
+- positions_get
+- orders_get
+- history queries if needed
+- order_calc_margin
+- order_calc_profit if useful
+- order_check
+- optional order_send, but only behind strict disabled-by-default live gates
+
+The wrapper must:
+- fail safely
+- return structured errors
+- support demo and disconnected modes
+- support mocking for tests
+- never crash the app on MT5 unavailability
+- clearly distinguish:
+  - not connected
+  - symbol missing
+  - account restricted
+  - order check failed
+  - execution disabled
+
+4. BROKER VALIDATION LAYER
+Implement broker-aware validation using MT5 data:
+- symbol exists and is tradable
+- min lot
+- max lot
+- lot step
+- contract size
+- point / tick size
+- spread
+- margin mode if needed
+- trading hours if available
+- fill policy if relevant
+- account trade mode
+- leverage
+- free margin
+- margin level
+- existing exposure
+
+5. RISK ENGINE
+This is one of the most important modules.
+Implement strict risk logic including:
+- default risk per trade: 0.5% equity
+- hard max risk per trade: 1.0% equity
+- daily loss limit
+- weekly loss limit
+- total open risk cap
+- correlated exposure cap
+- size rounding down only
+- stop-first sizing
+- no trade if minimum broker lot breaks risk rules
+- no trade if stop is missing or invalid
+- no trade if spread or cost drag is too high
+- no trade if slippage allowance makes expected edge too weak
+- no trade if margin becomes unsafe
+- no trade if duplicate trade already exists
+- no trade if daily or weekly lock is active
+
+Position sizing must be derived from:
+- account equity
+- allowed risk amount
+- stop-loss distance
+- pip value estimate
+- spread / commission / slippage allowance
+- broker minimum lot
+- broker lot step
+- margin requirements
+- open correlated exposure
+
+Always round size down.
+Never round up.
+Always calculate and store the reason when rejecting a trade.
+
+6. DECISION ENGINE
+Implement an agent-style decision layer that combines:
+- TradingView alert data
+- internal normalized signal data
+- MT5 broker/account validation
+- risk engine results
+- duplicate checks
+- loss-limit state
+- veto logic
+- optional news or session filters if designed
+
+The engine must output one of:
+- BUY
+- SELL
+- WATCHLIST
+- NO_TRADE
+
+Optional internal status:
+- PAPER_TEST_ONLY
+
+The engine must be able to explain:
+- why the setup was considered
+- why it passed or failed
+- what TradingView contributed
+- what MT5 confirmed or rejected
+- what risk rule blocked it if blocked
+
+7. STRATEGY / SOURCE REVIEW SUPPORT
+Add support for storing and reviewing:
+- internal strategies
+- external signal sources
+- copied strategy candidates
+- strategy classifications
+- risk flags such as:
+  - martingale
+  - grid
+  - averaging down
+  - hidden floating loss
+  - oversized leverage
+  - low transparency
+- paper-test-only recommendations
+
+This does not need full AI automation on day one, but the schema and review flow should support it.
+
+8. PERSISTENCE LAYER
+Use SQLite and create a clean schema for:
+- raw webhooks
+- normalized signals
+- symbol mappings
+- broker snapshots
+- account snapshots
+- risk checks
+- decision results
+- veto reasons
+- trades
+- paper trades
+- positions
+- journal entries
+- audit logs
+- backtest runs
+- replay sessions
+- settings
+- daily/weekly loss lock state
+
+Every important event must be persisted.
+
+9. AUDIT LOGGING
+Implement structured audit logging for:
+- webhook received
+- payload rejected
+- symbol mapped
+- MT5 lookup result
+- account snapshot
+- risk calculation
+- veto triggered
+- decision made
+- paper trade opened
+- paper trade closed
+- backtest started
+- backtest completed
+- system error
+- execution blocked
+- execution attempted
+- execution denied by mode
+- configuration problems
+
+Logs must be human-readable and machine-readable.
+
+10. SIMULATION / PAPER TRADING MODE
+Build paper trading as the default.
+The system should be able to:
+- take approved trade candidates
+- simulate entries and exits
+- track open virtual positions
+- apply stop loss / take profit rules
+- mark outcomes
+- calculate realized and unrealized PnL
+- track daily and weekly performance
+- feed results into the learning/review dashboard
+
+11. BACKTEST / REPLAY SUPPORT
+Build at least a minimal backtest or replay engine that can:
+- replay historical alerts or synthetic signals
+- simulate trade decisions through the same risk engine
+- simulate PnL outcomes
+- compare raw signal vs approved signal vs rejected signal
+- show veto reasons
+- store results in SQLite
+
+The backtest/replay engine must use the same safety logic as live/paper approval wherever practical.
+Do not create a fake backtester with different rules.
+
+12. DASHBOARD
+Build a local dashboard that is practical and audit-first, not decorative.
+It should show:
+- system status
+- current mode (simulation / paper / disabled / live-disabled)
+- MT5 connection status
+- latest TradingView webhooks
+- normalized signals
+- symbol mapping status
+- current risk state
+- daily and weekly lock status
+- open paper positions
+- recent decisions
+- veto / rejection reasons
+- performance summary
+- broker/account snapshot
+- logs / audit trail
+- backtest / replay results
+- strategy review flags
+
+The dashboard should make it easy to answer:
+- What just happened?
+- Why was this trade blocked?
+- Is MT5 connected?
+- Is the symbol mapping correct?
+- Are loss locks active?
+- Is the account safe?
+- What is the agent doing now?
+
+13. SAFETY MODES
+Implement explicit system modes:
+- DISCONNECTED
+- SIMULATION
+- PAPER_TRADING
+- LIVE_DISABLED
+- LIVE_GATED
+
+Default mode must be SIMULATION or PAPER_TRADING.
+LIVE_GATED must remain disabled unless an explicit config switch is enabled later.
+
+Even in LIVE_GATED:
+- no order_send unless all validations pass
+- no order_send without explicit mode permission
+- no order_send when broker or MT5 data is stale
+- no order_send when risk locks are active
+
+14. CONFIGURATION
+Use environment variables or config files for:
+- TradingView webhook secret
+- MT5 terminal path if needed
+- default risk %
+- daily loss cap
+- weekly loss cap
+- correlated exposure cap
+- spread thresholds
+- slippage assumptions
+- simulation mode
+- live mode enable switch
+- database path
+- symbol mapping rules
+
+Provide safe defaults and a sample env file.
+
+15. TESTING
+Do not rely on previous claims about passing tests.
+Create and run a real automated test suite.
+
+Tests must cover at minimum:
+- webhook payload validation
+- duplicate webhook handling
+- stale webhook rejection
+- symbol normalization
+- MT5 wrapper behavior with mocks
+- broker min lot validation
+- position size rounding down
+- rejecting trades with invalid or missing stop
+- rejecting trades when min lot breaks risk
+- rejecting trades when spread is too wide
+- daily loss lock
+- weekly loss lock
+- duplicate trade rejection
+- order_check failure handling
+- MT5 unavailable handling
+- paper trade lifecycle
+- persistence of audit logs
+- dashboard endpoints or backend data providers
+- backtest/replay basic flow
+
+16. USER EXPERIENCE
+The system is for a user still learning.
+Therefore:
+- explanations should be clear
+- decisions should show plain-English reasons
+- risk warnings should be obvious
+- no-trade should be treated as a normal and professional result
+- the UI should make it easy to understand why something was rejected
+
+17. NON-NEGOTIABLE RULES
+- No martingale
+- No grid recovery
+- No blind copy execution
+- No hidden live trading
+- No unlogged decisions
+- No trade without defined invalidation
+- No trade without stop-first sizing
+- No trade if size must round up
+- No trade if broker minimum size makes risk too large
+- No trade if the bridge payload is invalid
+- No trade if symbol mapping is uncertain
+- No trade if MT5 and TradingView disagree materially
+- No trade if MT5 account or broker checks fail
+- No trade if daily/weekly loss cap is hit
+- If in doubt: NO_TRADE
+
+18. IMPLEMENTATION QUALITY
+Use clean code and separation of concerns.
+Prefer simple, testable modules over clever but fragile code.
+Add clear type hints where reasonable.
+Add docstrings or concise inline documentation where useful.
+Make it easy to inspect, debug, and extend.
+
+19. README REQUIREMENTS
+Write a real README that explains:
+- what the app does
+- architecture overview
+- how TradingView alerts flow into the app
+- how MT5 is used
+- how risk approval works
+- how to start in simulation mode
+- how to run tests
+- how to use the dashboard
+- how to configure symbol mapping
+- why live trading is disabled by default
+- where audit logs and the SQLite database live
+
+20. INITIAL DELIVERABLE ORDER
+Build in this order:
+1. repository structure
+2. config system
+3. SQLite schema
+4. webhook intake
+5. signal normalization + symbol mapping
+6. MT5 wrapper
+7. risk engine
+8. decision engine
+9. paper-trade flow
+10. audit logging
+11. dashboard
+12. tests
+13. README
+
+21. OUTPUT EXPECTATION
+Do not ask me to restate the project unless something is critically missing.
+Use the MASTER AGENT PROMPT below as the behavior specification.
+Use the EXECUTION AGENT PROMPT below for the final decision layer.
+Now build the system directly.
+
+Begin by:
+- creating the folder structure
+- defining the database schema
+- creating the webhook endpoint
+- implementing the MT5 service abstraction
+- implementing the risk engine skeleton
+- writing the first tests
+- documenting the architecture
+
+==================================================

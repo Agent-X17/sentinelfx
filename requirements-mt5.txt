@@ -1,0 +1,3 @@
+# Optional adapter dependency. Install only on a supported MT5 terminal host.
+# The normal macOS simulation setup has no third-party Python dependency.
+MetaTrader5

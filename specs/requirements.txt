@@ -1,0 +1,989 @@
+You are building a safety-first Forex research, simulation, and signal-intelligence system for a Tanzanian retail trader.
+
+PROJECT NAME:
+Small Capital Forex Research & Risk Engine
+
+PRIMARY OBJECTIVE:
+PRESERVE CAPITAL
+↓
+LEARN
+↓
+PROVE AN EDGE
+↓
+BECOME CONSISTENT
+↓
+COMPOUND
+↓
+INCREASE CAPITAL
+↓
+THEN PURSUE LARGER DAILY INCOME
+
+IMPORTANT:
+This is NOT a guaranteed-income system.
+This is NOT a “make $50-$100 every day” system.
+This is NOT a blind-copy-trading system.
+This is NOT an autonomous trading system that may override risk controls.
+
+The system must prioritize safety, realistic constraints, research quality, auditability, and the ability to return:
+
+NO TRADE
+
+at any point.
+
+==================================================
+1. REAL STARTING CAPITAL
+==================================================
+
+Design around three separate real-money simulations:
+
+ACCOUNT_A:
+starting_equity_usd = 50
+
+ACCOUNT_B:
+starting_equity_usd = 100
+
+ACCOUNT_C:
+starting_equity_usd = 150
+
+Do NOT use position-sizing assumptions appropriate for accounts worth thousands of dollars.
+
+First calculate and display:
+
+$50 as a percentage of:
+- $50 account = 100%
+- $100 account = 50%
+- $150 account = 33.33%
+
+$100 as a percentage of:
+- $50 account = 200%
+- $100 account = 100%
+- $150 account = 66.67%
+
+Clearly explain in the UI and documentation why $50-$100 per day cannot be treated as a realistic, safe, or guaranteed daily target for accounts of $50-$150.
+
+Treat $50-$100/day only as a FUTURE SCALING OBJECTIVE that may become possible only after:
+- demonstrated edge,
+- substantial account growth,
+- appropriate capital,
+- proven execution,
+- controlled drawdown,
+- and extensive validated data.
+
+==================================================
+2. HARD RISK RULES
+==================================================
+
+Risk Engine has absolute final authority.
+
+No AI component, technical strategy, macro model, signal provider, copied trader, manual operator, or execution service may override the Risk Engine.
+
+Default conservative risk settings:
+
+ACCOUNT_A = $50:
+- maximum risk per trade: $0.25 to $0.50
+- maximum daily loss: $1.00 to $1.50
+- maximum weekly loss: $2.00 to $3.00
+- target concurrent positions: 0 to 1
+
+ACCOUNT_B = $100:
+- maximum risk per trade: $0.50 to $1.00
+- maximum daily loss: $2.00 to $3.00
+- maximum weekly loss: $4.00 to $6.00
+- target concurrent positions: usually 1, maximum 2 only if uncorrelated and risk remains within limits
+
+ACCOUNT_C = $150:
+- maximum risk per trade: $0.75 to $1.50
+- maximum daily loss: $3.00 to $4.50
+- maximum weekly loss: $6.00 to $9.00
+- target concurrent positions: usually 1, maximum 2 only if uncorrelated and risk remains within limits
+
+All risk limits must be configurable, but the initial defaults must remain conservative.
+
+Mandatory hard rejects:
+- If required lot size is below broker minimum lot size: NO TRADE
+- If risk at broker minimum lot size exceeds risk budget: NO TRADE
+- If spread plus commission consumes too much of allowed risk: NO TRADE
+- If spread is abnormally wide: NO TRADE
+- If a high-impact economic event is near: NO TRADE unless explicitly allowed by a conservative news-risk policy
+- If daily loss cap is reached: NO TRADE for the rest of the day
+- If weekly loss cap is reached: suspend trading until review
+- If margin level would be unsafe: NO TRADE
+- If signal is stale, duplicate, malformed, missing timestamp, unsupported symbol, or expired: NO TRADE
+- If correlated exposure is excessive: NO TRADE
+- If stop loss is missing: NO TRADE
+- If risk/reward is below configured minimum: NO TRADE
+
+Never force a trade to meet a daily profit target.
+
+==================================================
+3. POSITION-SIZING ENGINE
+==================================================
+
+Build a PositionSizer that calculates every trade independently.
+
+Inputs:
+- account equity
+- account currency
+- currency pair
+- direction
+- entry price
+- stop loss price
+- take profit price
+- stop-loss distance in pips
+- pip value
+- broker contract size
+- broker minimum lot size
+- lot-size increment
+- leverage
+- margin requirement
+- spread
+- commission
+- swap estimate when applicable
+- current open exposure
+- correlated exposure
+- risk limit per trade
+- daily and weekly remaining risk allowance
+
+Required formula:
+
+position_size =
+maximum_allowable_loss /
+((stop_loss_pips × pip_value_per_lot) + estimated_transaction_cost)
+
+Transaction cost must include:
+- spread cost,
+- commission,
+- estimated slippage buffer,
+- swap where relevant.
+
+The actual final position size must be rounded DOWN to the broker’s allowed lot increment.
+
+If rounding down causes an impractically small trade or if broker minimum volume causes excess risk, return:
+NO TRADE
+
+Never copy a provider’s position size directly.
+
+Example:
+If provider trades 1.00 lot, do NOT copy 1.00 lot.
+Calculate follower size only from:
+- my account equity,
+- my stop distance,
+- my permitted dollar loss,
+- pip value,
+- current exposure,
+- broker constraints.
+
+==================================================
+4. SMALL ACCOUNT / CENT ACCOUNT LOGIC
+==================================================
+
+The system must explicitly distinguish:
+
+A. Normal standard-lot account:
+- standard lot = 100,000 units
+- usual minimum = 0.01 standard lot
+- approximately $0.10/pip on EUR/USD at 0.01 lot
+
+B. Cent-style account:
+- contract size and lot definitions must be loaded from broker configuration
+- example: HFM Cent documentation says 1 cent lot equals 1,000 units and minimum trade size is 0.01 cent lot
+- do not assume this structure applies to every broker or country
+- fetch and store broker-specific contract size, minimum volume, increments, costs, and account availability
+
+For each of Account A, B, and C, calculate and display:
+- smallest possible lot size
+- pip value at smallest lot
+- margin required
+- usable leverage
+- estimated spread cost
+- estimated commission cost
+- maximum safe loss per trade
+- daily maximum loss
+- weekly maximum loss
+- estimated number of realistic simultaneous positions
+- whether proper risk management is mechanically possible
+- whether broker minimum lot size makes the configuration unacceptable
+- how many losses / spread costs might materially damage the account
+- which major currency pairs are practical
+- whether a standard account should be rejected
+- whether cent account or equivalent small-contract account is required
+
+Preferred starting instruments:
+- EUR/USD
+- USD/JPY
+- possibly GBP/USD only if spread and volatility conditions are acceptable
+
+Avoid by default:
+- exotic FX pairs
+- wide-spread instruments
+- high-volatility pairs
+- poorly liquid instruments
+- gold unless tiny sizing and full risk constraints are proven possible
+- crypto CFDs
+- indices with unsuitable minimum contract sizes
+
+==================================================
+5. BROKER DUE-DILIGENCE MODULE
+==================================================
+
+Create a broker research database and comparison interface.
+
+Initial broker research list:
+- HFM
+- FP Markets
+- Exness
+- XM
+- IC Markets
+- Pepperstone
+- Deriv
+- FXTM
+- additional legitimate candidates only when supported by official documentation
+
+User location:
+- Tanzania
+- Tanzanian resident and citizen
+
+For each broker, collect from official broker documentation, regulator databases, official legal agreements, and official Tanzania-specific pages where available:
+
+- brand
+- whether Tanzania is accepted: YES / NO / UNCERTAIN
+- exact legal entity serving Tanzanian accounts
+- country of legal entity
+- regulator
+- regulatory license number
+- official legal-document link
+- account types
+- minimum deposit
+- minimum withdrawal
+- minimum trade size
+- lot-size increment
+- cent/micro/small-contract account availability
+- MT4 support
+- MT5 support
+- cTrader support
+- TradingView support
+- EA/bot support
+- Python integration possibility
+- API availability
+- copy trading availability
+- copy trading availability on cent/small accounts
+- social trading
+- MetaTrader Signals support
+- scalping policy
+- hedging policy
+- leverage limits
+- negative balance protection
+- client-fund segregation disclosures
+- typical spreads
+- commissions
+- swap charges
+- deposit methods available specifically to Tanzanian residents
+- withdrawal methods available specifically to Tanzanian residents
+- Tanzanian Visa/Mastercard support
+- Tanzanian bank withdrawal support
+- local mobile-money availability, only if officially confirmed
+- e-wallet support
+- minimum withdrawal per method
+- withdrawal fees
+- withdrawal-processing times
+- currency conversion charges
+- KYC requirements
+- profit-withdrawal restrictions
+- closed-loop withdrawal rules
+- regulatory actions worth noting
+- credible withdrawal complaints requiring further investigation
+
+Do NOT describe a broker as FCA, ASIC, CySEC, or otherwise regulated unless the exact entity accepting Tanzanian customers is actually regulated by that authority.
+
+Always display:
+
+BRAND
+↓
+ENTITY SERVING TANZANIA
+↓
+COUNTRY
+↓
+REGULATOR
+↓
+LICENSE NUMBER
+
+If the entity serving Tanzania cannot be confirmed, mark:
+ENTITY UNCONFIRMED — DO NOT FUND UNTIL WRITTEN CONFIRMATION
+
+Broker scoring weights:
+- small-account suitability: 25%
+- Tanzania withdrawal practicality: 25%
+- legal-entity transparency and regulation: 15%
+- minimum trade size / cent structure: 10%
+- trading costs: 10%
+- automation / MT5 / API potential: 5%
+- copy trading / strategy marketplace: 5%
+- execution / risk protections / customer support: 5%
+
+Do not rank brokers using affiliate-review claims.
+
+==================================================
+6. WITHDRAWAL TEST WORKFLOW
+==================================================
+
+Create a mandatory “Withdrawal Test Checklist” page.
+
+Before meaningful funding:
+
+1. Open and verify the account
+2. Confirm exact legal entity and Tanzania availability in writing
+3. Use demo first
+4. Deposit a very small real amount
+5. Place legitimate small trades
+6. Request a small withdrawal
+7. Confirm money arrives in the Tanzanian payment method
+8. Record total fees, conversion charges, processing time, and any complications
+9. Only then allow a recommendation to increase funding
+
+Store each test:
+- broker
+- entity
+- account type
+- deposit method
+- withdrawal method
+- deposit amount
+- withdrawal amount
+- dates
+- fees
+- conversion charges
+- expected time
+- actual time
+- successful / unsuccessful / pending
+- evidence notes
+- support-ticket reference
+- screenshot/document attachment path if supplied
+
+Do not recommend a broker merely because deposits are easy.
+Withdrawal reliability has high priority.
+
+==================================================
+7. COPY TRADING / SIGNAL RESEARCH
+==================================================
+
+Build a Copy Trading and Signal Provider research module.
+
+Potential sources, where legally available and technically permitted:
+- HFM Copy Trading
+- FP Markets Social / Copy Trading
+- MetaTrader Signals
+- cTrader Copy
+- Signal Start
+- regulated broker social-copy systems
+- verified professional strategy marketplaces
+- authorized signal providers
+
+Never choose providers simply because they show the highest return.
+
+For each provider/strategy, collect when available:
+- provider name
+- platform
+- broker
+- live vs demo status
+- account age
+- verified history status
+- number of trades
+- total return
+- monthly return
+- average monthly return
+- maximum drawdown
+- current drawdown
+- win rate
+- average win
+- average loss
+- profit factor
+- Sharpe ratio
+- Sortino ratio
+- average holding time
+- risk score
+- leverage used
+- typical lot size
+- number of followers
+- follower capital
+- performance fee
+- subscription fee
+- instruments traded
+- trading frequency
+- largest losing trade
+- largest losing period
+- consecutive losses
+- stop-loss usage
+- martingale evidence
+- grid-trading evidence
+- averaging-down evidence
+- loss-recovery lot-size escalation
+- dependence on extreme leverage
+- visible versus floating drawdown
+- source link
+- research date
+- confidence in data quality
+
+Never describe a provider as profitable merely because its lifetime return is currently positive.
+
+Required provider warning flags:
+- extremely high returns over short periods
+- huge drawdown
+- martingale
+- grid recovery
+- indefinite averaging into losers
+- no stop losses
+- extreme leverage
+- newly created account
+- tiny sample size
+- unexplained equity drops
+- chart that hides floating losses
+- large disparity between balance and equity
+- frequent lot-size escalation after losses
+- high correlated exposure
+- very short live history
+
+Preferred provider characteristics:
+- long LIVE track record
+- controlled drawdown
+- consistent returns
+- transparent statistics
+- realistic leverage
+- sufficient number of trades
+- reasonable risk-adjusted performance
+- defined stop-loss practice
+- no martingale
+- no grid recovery
+- no aggressive averaging down
+
+Past performance does not guarantee future profits.
+Always show this disclaimer in provider screens.
+
+==================================================
+8. COPY-TRADING RISK CONTROLS
+==================================================
+
+Build special controls for copied strategies.
+
+Configuration:
+- maximum number of active providers
+- maximum allocation per provider
+- maximum loss allocated to any provider
+- maximum simultaneous copied trades
+- maximum correlated provider exposure
+- maximum provider drawdown
+- provider circuit-breaker threshold
+- provider suspension duration
+- manual review requirement before resuming
+- maximum daily copied-strategy loss
+- maximum weekly copied-strategy loss
+
+Provider suspension events:
+- provider drawdown exceeds configured threshold
+- provider begins martingale or grid behavior
+- provider removes stop losses
+- unexpected large lot-size increase
+- performance degradation reaches statistical threshold
+- unacceptable slippage or execution difference
+- correlation creates excess exposure
+- provider data becomes unavailable or unverifiable
+- provider has a large losing period outside expected statistical range
+
+Provider suspension must NOT automatically resume.
+Require explicit reassessment and human approval.
+
+==================================================
+9. MULTI-SOURCE SIGNAL INTELLIGENCE ENGINE
+==================================================
+
+Build a modular SignalProvider interface.
+
+Implementations may include:
+- ManualSignalProvider
+- MT5SignalProvider
+- CopyTradingProvider
+- PublicStrategyProvider
+- TechnicalStrategyProvider
+- MacroSignalProvider
+- NewsRiskProvider
+- BrokerExecutionProvider
+
+Standardized Signal object:
+
+{
+  "signal_id": "uuid",
+  "symbol": "EURUSD",
+  "direction": "BUY",
+  "entry": 1.00000,
+  "stop_loss": 0.00000,
+  "take_profit": 0.00000,
+  "timestamp": "ISO-8601 UTC timestamp",
+  "expires_at": "ISO-8601 UTC timestamp",
+  "provider": "provider name",
+  "provider_confidence": 0.0,
+  "strategy": "strategy name",
+  "source": "source name",
+  "timeframe": "M15/H1/H4/D1",
+  "metadata": {}
+}
+
+Reject:
+- stale signals
+- duplicate signals
+- malformed signals
+- signals without timestamps
+- signals without expiry time
+- signals for unsupported symbols
+- signals without stop loss
+- signals with invalid entry/stop/take-profit logic
+- signals whose proposed risk exceeds limits
+
+External signals are advisory inputs only.
+They must never bypass:
+- RiskManager
+- PositionSizer
+- ExecutionValidator
+- SafetyController
+
+==================================================
+10. SIGNAL SCORING
+==================================================
+
+Build a configurable DecisionEngine score:
+
+signal_confidence =
+weighted_provider_score
++ weighted_technical_score
++ weighted_market_regime_score
++ weighted_macro_score
++ weighted_execution_quality_score
++ weighted_risk_reward_score
+- weighted_news_risk_penalty
+- weighted_spread_penalty
+- weighted_correlation_penalty
+- weighted_volatility_penalty
+
+Example evidence:
+- Trader A: EUR/USD BUY
+- Trader B: EUR/USD BUY
+- Trader C: NO TRADE
+- Technical Engine: bullish
+- Macro Engine: neutral
+- Risk Engine: acceptable
+
+The DecisionEngine may form a candidate trade, but RiskManager has final veto.
+
+If RiskManager rejects:
+DO NOT TRADE
+
+Also permit:
+- insufficient evidence = NO TRADE
+- conflicting high-quality signals = NO TRADE
+- poor execution conditions = NO TRADE
+- no statistical edge = NO TRADE
+
+==================================================
+11. STRATEGY RESEARCH LIBRARY
+==================================================
+
+Build a Strategy Research Library using only:
+- publicly documented methodologies
+- academic research
+- published quantitative ideas
+- transparent broker-provided strategy statistics
+- authorized signals
+- legitimate marketplaces
+
+Do not claim access to secret professional strategies.
+Do not steal proprietary strategies.
+
+Include research templates for:
+- trend following
+- momentum
+- breakouts
+- mean reversion
+- London-session approaches
+- New York-session approaches
+- volatility breakouts
+- moving-average systems
+- RSI systems
+- ATR systems
+- support and resistance
+- market structure
+- multi-timeframe confirmation
+- carry concepts
+- macro / interest-rate regime concepts
+
+Each strategy requires:
+- full rules definition
+- instrument universe
+- timeframe
+- data source
+- backtest period
+- out-of-sample period
+- number of trades
+- gross return
+- net return after spread/commission/slippage
+- maximum drawdown
+- win rate
+- average win
+- average loss
+- profit factor
+- Sharpe / Sortino where possible
+- trade-frequency analysis
+- sensitivity testing
+- parameter stability analysis
+- drawdown analysis
+- market-regime analysis
+- known weaknesses
+- whether viable for $50, $100, and $150 accounts
+- broker minimum-lot compatibility
+- transaction-cost compatibility
+
+No strategy may influence real-money recommendations unless independently backtested with realistic transaction costs.
+
+==================================================
+12. PERFORMANCE DATABASE
+==================================================
+
+Use PostgreSQL or SQLite initially, with clean migration support.
+
+Required models/tables:
+
+providers
+- id
+- name
+- platform
+- broker
+- source_url
+- live_status
+- verified_status
+- created_at
+- updated_at
+- risk_flags
+- status
+
+provider_metrics
+- provider_id
+- date
+- total_return
+- monthly_return
+- max_drawdown
+- current_drawdown
+- win_rate
+- average_win
+- average_loss
+- profit_factor
+- sharpe
+- sortino
+- trade_count
+- follower_count
+- follower_capital
+- leverage
+- risk_score
+
+signals
+- id
+- provider_id
+- symbol
+- direction
+- entry
+- stop_loss
+- take_profit
+- timestamp
+- expires_at
+- raw_payload
+- validation_status
+- rejection_reason
+
+signal_outcomes
+- signal_id
+- account_profile
+- simulated_entry
+- simulated_exit
+- position_size
+- gross_pnl
+- net_pnl
+- spread_cost
+- commission_cost
+- slippage_cost
+- swap_cost
+- r_multiple
+- outcome_status
+
+provider_daily_performance
+- provider_id
+- date
+- daily_pnl
+- daily_return
+- drawdown
+- number_of_signals
+- accepted_signals
+- rejected_signals
+
+provider_drawdowns
+- provider_id
+- start_date
+- end_date
+- drawdown_percentage
+- recovery_date
+- notes
+
+provider_status
+- provider_id
+- status
+- suspension_reason
+- suspended_at
+- review_due_at
+- human_review_required
+
+broker_profiles
+- broker
+- entity
+- country
+- regulator
+- license_number
+- Tanzania_availability_status
+- account_type
+- contract_size
+- minimum_lot
+- lot_increment
+- leverage
+- average_spread
+- commission
+- withdrawal_methods
+- withdrawal_notes
+- verification_status
+- last_checked_at
+
+withdrawal_tests
+- broker_profile_id
+- deposit_method
+- withdrawal_method
+- deposited_amount
+- withdrawn_amount
+- deposit_date
+- withdrawal_request_date
+- completed_date
+- fees
+- conversion_cost
+- result
+- notes
+
+==================================================
+13. PROVIDER LEARNING RULES
+==================================================
+
+The system may learn provider weightings only from statistically meaningful evidence.
+
+Examples:
+- Provider A may perform better in trending conditions
+- Provider B may perform poorly around high-impact news
+- Provider C may perform better in EUR/USD than GBP/JPY
+
+Requirements:
+- do not infer skill from small samples
+- display sample size
+- use confidence intervals where practical
+- separate in-sample from out-of-sample results
+- never increase risk to recover losses
+- never increase risk because a provider had recent losses
+- never use loss-chasing or martingale logic
+- always preserve maximum account-level risk caps
+
+==================================================
+14. SYSTEM ARCHITECTURE
+==================================================
+
+Use modular, testable architecture.
+
+Suggested services:
+- BrokerResearchService
+- ProviderResearchService
+- MarketDataService
+- NewsRiskService
+- MacroDataService
+- SignalNormalizer
+- SignalValidationService
+- ProviderScoringService
+- TechnicalAnalysisService
+- MarketRegimeService
+- RiskManager
+- PositionSizer
+- MarginCalculator
+- CorrelationRiskService
+- ExecutionValidator
+- SafetyController
+- BacktestingService
+- PerformanceAnalyticsService
+- WithdrawalTestService
+- AuditLogService
+
+Required decision order:
+
+1. Validate account state
+2. Validate broker constraints
+3. Validate signal freshness and completeness
+4. Check news and trading-session risk
+5. Check spread, commission, liquidity, and execution quality
+6. Check technical and market-regime conditions
+7. Check macro context
+8. Calculate stop-loss distance
+9. Calculate maximum acceptable dollar loss
+10. Calculate safe position size
+11. Check minimum lot, margin, and correlation
+12. Run RiskManager final veto
+13. Output either:
+   - APPROVED_SIMULATED_TRADE
+   - WATCHLIST
+   - NO_TRADE
+   - SUSPEND_PROVIDER
+   - SUSPEND_ACCOUNT
+
+==================================================
+15. USER INTERFACE
+==================================================
+
+Build a clean dashboard with:
+
+Dashboard:
+- selected account: A / B / C
+- current simulated equity
+- daily loss remaining
+- weekly loss remaining
+- open exposure
+- current risk status
+- number of active providers
+- current provider suspensions
+- broker/account configuration status
+- no-trade reasons
+- withdrawal-test status
+
+Account Simulator:
+- Account A/B/C side-by-side
+- position-size calculator
+- pip-value calculator
+- margin calculator
+- cost estimator
+- broker-minimum compatibility check
+- daily and weekly loss-limit simulation
+
+Broker Comparison:
+- table using the stated weighted scoring
+- Tanzania entity mapping
+- official-source links
+- withdrawal-method analysis
+- account-size suitability
+- “DO NOT FUND UNTIL CONFIRMED” warnings
+
+Provider Research:
+- provider cards and tables
+- performance history
+- drawdown charts
+- risk flags
+- live/demo indicator
+- verification indicator
+- data-quality score
+- suspension status
+- provider comparison
+
+Signals:
+- raw signals
+- normalized signals
+- accepted/rejected status
+- reasons for rejection
+- expiry countdown
+- final RiskManager decision
+
+Research Library:
+- strategy records
+- backtest results
+- transaction-cost assumptions
+- suitability for each account
+
+Audit Log:
+- every signal
+- every calculation
+- every veto
+- every change in provider score
+- every provider suspension
+- every simulated trade
+- every withdrawal test
+
+==================================================
+16. EXECUTION POLICY
+==================================================
+
+Default mode must be:
+RESEARCH_AND_SIMULATION_ONLY
+
+Do not connect to a live trading account by default.
+
+If live execution is ever added later:
+- require explicit manual enablement
+- require broker API/terminal credentials stored securely
+- require a final confirmation gate
+- retain all RiskManager vetoes
+- retain all daily/weekly stops
+- start with paper-trading / demo mode
+- do not allow automatic execution until the user has independently approved it
+
+==================================================
+17. TESTING
+==================================================
+
+Write comprehensive tests for:
+- pip value
+- position sizing
+- lot rounding
+- transaction-cost calculations
+- margin calculations
+- broker-minimum rejection
+- daily-loss stop
+- weekly-loss stop
+- stale-signal rejection
+- duplicate-signal rejection
+- missing-stop-loss rejection
+- news-risk veto
+- correlation veto
+- copied-provider lot-size override
+- provider circuit breaker
+- provider suspension
+- no-trade behavior
+- account A/B/C constraints
+
+Critical test:
+For every trade, prove that the maximum calculated loss including estimated transaction costs does not exceed the account’s remaining risk budget.
+
+If this cannot be proven:
+NO TRADE
+
+==================================================
+18. FINAL PRINCIPLE
+==================================================
+
+This is NOT:
+
+“find someone profitable and blindly copy them.”
+
+This system is:
+
+MARKET DATA
++
+PUBLICLY DOCUMENTED STRATEGIES
++
+MULTIPLE VERIFIED SIGNAL SOURCES
++
+TECHNICAL ANALYSIS
++
+MACRO / NEWS ANALYSIS
++
+PERFORMANCE DATABASE
++
+STRICT RISK ENGINE
+=
+TRADE DECISION
+
+And sometimes the best and only correct result is:
+
+NO TRADE
+
+Build the application with clear README documentation, setup instructions, database migrations, sample data, tests, and an audit-first design.

@@ -1,0 +1,73 @@
+Your revised constraint changes the whole design: with only $50 to $150, the system must be built around **survival, micro-risk, and frequent NO TRADE decisions**, not around income extraction. On a $50 account, a $50 day is a 100% daily return; on $100 it is 50%; on $150 it is 33.3%, while $100/day is 200%, 100%, and 66.7% respectively, so that target cannot be treated as a realistic or guaranteed daily objective and should only be viewed as a distant scaling goal after capital growth and verified edge.[1]
+
+## Small-account reality
+
+A normal standard FX micro-position of 0.01 lot on a 100,000-unit contract is usually too coarse for very small balances, because roughly $0.10 per pip means a 20-pip stop risks about $2 before costs, which is already 4% of a $50 account, 2% of a $100 account, and 1.33% of a $150 account.  HFM’s standard-style accounts all list a 0.01 minimum trade size, but its Cent account changes contract size to 1 lot = 1,000 units with 0.01 minimum lot, which makes the minimum live position far smaller than a normal account and materially better for a tiny balance.  Exness’ Standard Cent account likewise uses cent-lot sizing intended for smaller live exposure than a normal Standard account.[2][3][1]
+
+Using that structure, the safest framework is: maximum safe loss per trade around 1% on Account C, 0.5% to 1% on Account B, and often 0.25% to 0.5% on Account A; daily loss caps around 2% to 3%; weekly loss caps around 4% to 6%; and one position at a time unless margin, spread, and correlation are all exceptionally favorable.  On balances this small, spread and commission are not side details but a primary constraint, because even tight commissions per standard lot become disproportionate once you scale them down to tiny trades and combine them with the fixed friction of stop placement and slippage.[4][1][2]
+
+## Account simulations
+
+For HFM Cent, the key advantage is the smaller contract size: 1 lot = 1,000 units, minimum trade size 0.01 lot, maximum leverage up to 1:2000, and only Forex and Gold are listed for the account.  That implies a minimum 0.01 position represents about 10 currency units, so EUR/USD pip value is about $0.001 per pip at the smallest size, making risk control far more granular than on a normal 0.01 standard-lot account.  For a rough margin sense, 10 units of EUR/USD at 1:500 uses only about $0.02 of margin, at 1:100 about $0.10, and at 1:30 about $0.33, so margin itself is not the main bottleneck on a cent-style account; transaction cost and minimum tradable size are.[1][2]
+
+For Exness Standard Cent, the published help page states 1 cent lot equals 0.01 standard lot, minimum volume is 0.01 cent lots, spreads start from 0.3 pips, and leverage can go as high as “unlimited” subject to conditions.  That means it is also structurally viable for small-balance practice, but the practical question is country availability and withdrawal path for Tanzania, which still needs broker-side confirmation from support before funding because the legal-documents page alone lists entities without explicitly mapping Tanzania onboarding.[3][1]
+
+| Account | Practical structure | Safe per-trade loss | Daily max | Weekly max | Simultaneous positions | Verdict |
+|---|---|---:|---:|---:|---|---|
+| Account A = $50 | Cent-only or equivalent tiny-volume setup; normal 0.01 standard-lot trading is too coarse for disciplined FX risk. [2][3] | $0.25-$0.50. [1] | $1.00-$1.50. [1] | $2-$3. [1] | Usually 0-1. [1] | NO TRADE will be common; many broker/account combinations should be rejected. [1] |
+| Account B = $100 | Cent account still strongly preferred; normal micro-lot trading remains restrictive unless stops are very tight and spreads low. [2][3] | $0.50-$1.00. [1] | $2-$3. [1] | $4-$6. [1] | Usually 1, sometimes 2 if uncorrelated and tiny. [1] | Possible for learning and data collection, not income extraction. [1] |
+| Account C = $150 | Best of the three, but still a micro-learning account; cent structure remains superior. [2][3] | $0.75-$1.50. [1] | $3-$4.50. [1] | $6-$9. [1] | 1-2 at most. [1] | Usable for proving process discipline, not for targeting fixed daily cash flow. [1] |
+
+Practical pairs for such balances are the most liquid, lowest-cost majors, especially EUR/USD and possibly USD/JPY when spread conditions are favorable, while high-spread or high-volatility pairs like exotic crosses are poor fits because friction can consume too much of the allowed risk budget.  Any broker/account configuration that forces normal 0.01 standard-lot sizing without a cent or equivalent nano-like structure should be rejected for Account A and usually for Account B, because proper position sizing becomes mechanically impossible under conservative risk limits.[2][1]
+
+## Broker fit for Tanzania
+
+From official documentation gathered here, HFM is the cleanest confirmed small-account candidate so far because its international account page openly shows a Cent account with 1 lot = 1,000 units, 0.01 minimum trade size, MT4/MT5 support, and up to 1:2000 leverage, while the same page’s legal footer states the site is operated by HF Markets (SV) Ltd in St. Vincent & the Grenadines for that offering.  That does **not** prove Tanzania-specific onboarding by itself, but it does prove the small-account mechanics are structurally suitable in a way many brokers are not.[2]
+
+Exness is also promising for small balances because its legal-documents page identifies Exness (SC) Ltd, Exness B.V., and Exness (VG) Ltd as active operating entities, while public Exness help content says Standard Cent exists and is designed for smaller live exposure.  However, because the legal page does not directly state which one serves Tanzanian residents, you should treat Tanzania availability, exact onboarding entity, and withdrawal rails as **unconfirmed until support answers in writing**.[3][1]
+
+I do not yet have enough official-source evidence from this pass to rank FP Markets, XM, Pepperstone, IC Markets, Deriv, or FXTM for Tanzania-specific entity plus withdrawal practicality, so any recommendation on them now would be too weak for your standard of due diligence.  Based on the verified material available here, the early shortlist is HFM first for confirmed small-account structure, Exness second for likely small-account suitability, and all others still pending Tanzania-entity and withdrawal verification.[5][6][7][1][3][2]
+
+## Copy-trading architecture
+
+Your copy-trading design should treat every external provider as an **advisory signal**, never as executable truth.  The correct modular flow is `SignalProvider -> SignalNormalizer -> ProviderScorer -> Technical/Macro/Regime checks -> RiskManager veto -> PositionSizer -> ExecutionValidator -> broker`, with expired, duplicated, malformed, stale, or unsupported-symbol signals rejected before scoring.[1]
+
+For provider research, the screening rules should prioritize long live history, enough trades, contained drawdown, transparent statistics, and signs that stops are used; it should penalize short track records, tiny sample sizes, high floating drawdown, martingale, grid recovery, averaging losers, and lot-size escalation after losses.  The follower position must always be recalculated from your equity, stop distance, pip value, and current exposure, so if the provider sends 1.00 lot and your smallest safe size is below the broker minimum, the engine returns NO TRADE rather than forcing bad risk.[1]
+
+Before opening any live account, ask official support these Tanzania-specific questions in writing and keep the transcript: which legal entity will hold my Tanzanian account; regulator and license number for that entity; whether Tanzanian residents are currently accepted; exact minimum trade size and whether cent or equivalent accounts are available; supported deposit and withdrawal methods for Tanzania; whether Visa/Mastercard withdrawals back to Tanzanian-issued cards are supported; whether bank withdrawals to Tanzanian banks are supported; minimum withdrawal and processing time by method; whether profits must first return to the original deposit method; whether there are currency-conversion or withdrawal fees; and whether copy trading is available on the same small-balance account type.[2][1]
+
+The staged withdrawal test should remain mandatory: verify account, trade demo first, fund a tiny live amount, place a few legitimate micro trades, request a small withdrawal, confirm the money lands successfully in your Tanzanian method, and only then consider increasing capital.  The project’s core rule is unchanged and correct: preserve capital, learn, prove edge, become consistent, compound, increase capital, and only then attempt larger daily income.[1]
+
+Would you like me to continue with a second-pass broker-by-broker Tanzania due-diligence sweep focused specifically on official entity mapping, withdrawal methods, and copy-trading availability for HFM, Exness, XM, FP Markets, IC Markets, Pepperstone, Deriv, and FXTM?
+
+Sources
+[1] Compare Trading Accounts | HFM https://www.hfm.com/int/en/trading-accounts
+[2] Frequently Asked Questions | FAQ - HFM https://www.hfm.com/int/en/help/faqs
+[3] Standard Cent account - Exness Help Center https://get.exness.help/hc/en-us/articles/17537782786588-Standard-Cent-account
+[4] Exness Review (2026): Fees, Spreads & Platforms https://www.compareforexbrokers.com/reviews/exness/
+[5] FP Markets Review 2026 - Arincen https://en.arincen.com/companies/FpMarkets
+[6] [PDF] Client Agreement Terms and Conditions of Business - XM https://cloud.xm-cdn.com/static/pdf/System-PDFs/XMSC-Client-Agreement-Terms-and-Conditions-of-Business.pdf?v=bbf48cf75301fecf5c678e915812f22b
+[7] Legal documents | Pepperstone https://pepperstone.com/en/about-us/policies/legal
+[8] HFM Review - Trusted or a Scam Broker Revealed (2026) https://www.fxleaders.com/forex-brokers/forex-brokers-review/hf-markets-review/
+[9] Hfm Available Assets https://investinglive.com/directory/brokers/hfm/review/
+[10] FX Leaders https://www.fxleaders.com/forex-brokers/forex-brokers-by-country/forex-brokers-tanzania/
+[11] FP Markets Review - Trusted or a Scam Revealed (2026) https://www.fxleaders.com/forex-brokers/forex-brokers-review/fp-markets-review/
+[12] Hfm Account Pros & Cons https://www.dailyforex.com/forex-brokers/hotforex-review/account-types
+[13] FP Markets Broker Review - Forex & Stock Trading at FP Markets https://www.bestbrokers.com/reviews/fp-markets/
+[14] FP Markets Broker Review 2026 - All you need to know - FXStreet https://www.fxstreet.com/brokers/reviews/fp-markets
+[15] FP Markets in Tanzania 2026: Availability, Features, Fees ... https://brokersway.com/reviews/fp-markets/tanzania/
+[16] HF Markets Broker Review 2026 https://tradingfinder.com/brokers/hfm/
+[17] 10 Best No Dealing Desk (NDD) Forex Brokers in Tanzania 2026 https://brokersway.com/forex-brokers/no-dealing-desk/tanzania/
+[18] Is FP Markets Available in Tanzania? [2026 Answer] https://brokerrank.net/broker/fp-markets/tanzania
+[19] 8 Best Brokers for TradingView In Tanzania 2025 https://brokersway.com/forex-brokers/tradingview/tanzania/
+[20] Exness Legal documents | Exness https://www.exness.com/legal-documents/
+[21] Exness Review 2026 — Is It Safe and Reliable? - TIC Trading https://www.tic.co.tz/exness/
+[22] [PDF] Client Agreement Terms and Conditions of Business - XMTrading https://cloud.xmtrading.com/static/pdf/System-PDFs/Tradexfin-Client-Agreement-Terms-and-Conditions-of-Business-c.pdf?v=4aae6d182f1435ee77cabd12b0f7bf17
+[23] Exness Review 2026 — FCA, CySEC & Withdrawals | ForexTradeLab https://forextradelab.com/blog/exness-review-2026/
+[24] Forex Trading in Tanzania 2026 — CMSA & M-Pesa | ForexTradeLab https://forextradelab.com/blog/forex-trading-tanzania-guide-2026/
+[25] Exness Deposits &... https://safeforexbrokers.com/tz/reviews/exness-review/
+[26] [PDF] Tel: +612 8607 8385 | Email: auinfo@xm.com - XM https://www.xm.com/assets/pdf/new/terms/XMAU-Client-Agreement-Terms-and-Conditions-of-Business.pdf
+[27] Summary of Exness's trading conditions - Account Types ... https://fofan.org/summary-of-exnesss-trading-conditions-account-types-spread-leverage-and-more/
+[28] Exness Standard Accounts (Standard/Cent Accounts) | Exness https://exn.fxsignup.com/en/account-type/standard.html
+[29] Exness Withdrawal: Limits, Methods, Fees and Processing Times https://www.tic.co.tz/exness/withdrawal/
+[30] Exness Cent Account Guide 2026 | ForexTradeLab https://forextradelab.com/blog/exness-cent-account-guide-2026/

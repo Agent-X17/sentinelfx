@@ -1,0 +1,9 @@
+[project]
+name = "small-capital-forex-engine"
+version = "0.1.0"
+description = "Local simulation and research with a fail-closed risk gate"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,44 @@
+{
+  "account_profile": "ACCOUNT_A",
+  "broker_id": "demo-cent",
+  "signal": {
+    "signal_id": "0ea07044-3c00-42ce-bf62-3e3602f76793",
+    "symbol": "EURUSD",
+    "direction": "BUY",
+    "entry": "1.1000",
+    "stop_loss": "1.0980",
+    "take_profit": "1.1040",
+    "timestamp": "2026-09-21T15:58:51.757674+00:00",
+    "expires_at": "2026-09-21T16:03:51.757674+00:00",
+    "provider": "demo-provider",
+    "provider_confidence": "0.95",
+    "strategy": "Synthetic risk-gate exercise",
+    "source": "Manual simulation fixture",
+    "timeframe": "H1",
+    "metadata": {
+      "provider_lot_size": "1.00"
+    }
+  },
+  "market": {
+    "symbol": "EURUSD",
+    "price": "1.1000",
+    "timestamp": "2026-09-21T15:58:51.757674+00:00",
+    "context_timestamp": "2026-09-21T15:58:51.757674+00:00",
+    "spread_pips": "1",
+    "slippage_pips": "0.5",
+    "commission_per_lot": "0",
+    "swap_per_lot": "0",
+    "session_open": true,
+    "liquid": true,
+    "edge_validated": true,
+    "conflicting_signals": false,
+    "news_risk": "0",
+    "correlation": "0",
+    "volatility": "0.1",
+    "execution_quality": "0.95",
+    "technical_score": "0.9",
+    "regime_score": "0.9",
+    "macro_score": "0.8",
+    "synthetic": true
+  }
+}

@@ -1,0 +1,21 @@
+You already have the project context from this chat.
+
+I am now giving you ONE complete message containing 3 clearly separated prompt specifications for the same system.
+
+IMPORTANT INSTRUCTIONS
+- Use the BUILD PROMPT as the implementation task.
+- Use the MASTER AGENT PROMPT as the high-level behavior specification for the system.
+- Use the EXECUTION AGENT PROMPT as the final decision module inside the app.
+- Do NOT collapse all 3 into one mixed role.
+- Store them separately in the codebase as prompt/config assets or clearly separated internal specifications.
+- Preserve the original safety-first logic.
+- Improve implementation quality without weakening risk discipline.
+- Keep live trading disabled by default.
+- Do not connect real broker credentials automatically.
+- Build the system around this real workflow:
+  TradingView -> webhook/bridge -> internal forex agent/risk engine -> MT5 -> broker account
+- Start building immediately.
+- Do NOT ask me to restate the project unless something critically necessary is missing.
+- Begin with repository structure, config, SQLite schema, webhook intake, MT5 wrapper, risk engine, tests, and README.
+
+==================================================
