@@ -72,7 +72,7 @@ class Store:
                 if dst.execute('PRAGMA integrity_check').fetchone()[0]!='ok' or dst.execute('PRAGMA foreign_key_check').fetchone():
                     raise ValueError('Database integrity check failed')
                 if not Store.verify_audit(dst): raise ValueError('Audit chain check failed')
-                if {r[0] for r in dst.execute('SELECT version FROM schema_migrations')} != {1,2,3}:
+                if {r[0] for r in dst.execute('SELECT version FROM schema_migrations')} != {1,2,3,4}:
                     raise ValueError('Unexpected schema versions')
             return str(destination)
         except Exception as exc:

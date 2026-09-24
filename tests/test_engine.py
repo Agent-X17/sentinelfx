@@ -215,7 +215,7 @@ class ExtendedSafetyTests(Fixture):
     def test_normalized_pair_settles(self):
         self.s['symbol']='EUR/USD';r=self.submit();self.assertEqual(r['decision'],'APPROVED_SIMULATED_TRADE');self.app.close_position(r['position_id'],'stop')
     def test_migration_upgrade(self):
-        with self.app.store.connect() as db:self.assertEqual([r[0] for r in db.execute('SELECT version FROM schema_migrations ORDER BY version')],[1,2,3])
+        with self.app.store.connect() as db:self.assertEqual([r[0] for r in db.execute('SELECT version FROM schema_migrations ORDER BY version')],[1,2,3,4])
     def test_loss_caps_across_days(self):
         yesterday=(utcnow()-timedelta(days=1)).isoformat()
         with self.app.store.transaction() as db:

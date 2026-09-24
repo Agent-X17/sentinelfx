@@ -83,3 +83,13 @@ Then open `http://127.0.0.1:8765/` and verify Overview, Account simulator, Broke
 ## Known limits
 
 The MT5 adapter is not enabled by the Mac launcher. Real news/macro feeds, exact Tanzania legal entity, withdrawal rails, commission/swap configuration, public HTTPS ingress, user authentication and production deployment are not complete. The runtime MT5 broker profile is therefore unverified. These are intentional visible limits, not evidence of live readiness.
+
+## Manual-confirmed demo proposal handoff
+
+- Migration `004_demo_trade_proposals.sql` adds durable proposals and append-only transition history.
+- `engine/service.py` owns stricter proposal sizing, persistence, expiry, and local review transitions.
+- `engine/bridge.py` creates proposals only when the explicit feature flag is on, the kill switch is clear, expected demo identity matches, timestamps are fresh, exposure is empty, all normal risk checks pass, and a read-only order check confirms the exact volume.
+- `server.py` exposes only `/api/demo-proposals/review`; the existing local Host/Origin and CSRF checks apply. There is no execution endpoint.
+- `static/app.js` adds the Demo proposals review page and permanent no-send warning.
+- Approval changes state only. `MT5Service.order_send()` still refuses and no new call site exists.
+- Real diagnostic snapshots remain ineligible because the isolated boundary does not yet expose verified order-check evidence. Do not weaken this to make a real proposal appear.

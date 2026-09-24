@@ -191,3 +191,25 @@ prompts/               supplied prompts preserved as separate assets
 ```
 
 Start with [docs/FULL_PROJECT_REPORT.md](docs/FULL_PROJECT_REPORT.md) for the candid implementation history, verification evidence, known weaknesses, and remaining work. See also [docs/API.md](docs/API.md), [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md), [docs/VERIFICATION.md](docs/VERIFICATION.md), and [docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md).
+
+## Manual-confirmed demo trade proposals
+
+This release can create a durable, local review artifact from a fully checked TradingView candidate. It does not submit an MT5 order. The feature is off by default, its kill switch is on by default, and every approval screen states: **DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.**
+
+Local configuration is environment-only. Never commit the account identity values:
+
+```sh
+export DEMO_TRADE_PROPOSALS_ENABLED=true
+export DEMO_TRADE_PROPOSAL_KILL_SWITCH=false
+export DEMO_EXPECTED_ACCOUNT_LOGIN='your-demo-login'
+export DEMO_EXPECTED_BROKER_SERVER='your-demo-server'
+export DEMO_PROPOSAL_EXPIRY_MINUTES=10
+export DEMO_MAX_RISK_PER_TRADE_PCT=0.25
+export DEMO_MAX_DAILY_LOSS_PCT=1.0
+export DEMO_MAX_OPEN_POSITIONS=1
+export DEMO_MAX_TRADES_PER_DAY=2
+```
+
+Start the local server normally, open `http://127.0.0.1:8765/#proposals`, and inspect the proposal, account snapshot, sizing, vetoes, warnings, and history. Approve changes only the durable status to `APPROVED_FOR_FUTURE_DEMO_EXECUTION`; it does not call MT5 or create a paper position. Reject, cancel, and automatic expiry are also audited. All state-changing proposal actions require the local CSRF token and local Host/Origin checks.
+
+A proposal is refused when account identity is not configured or mismatched, the account is not confirmed as demo, the quote or account snapshot is stale, exposure exists, risk checks fail, the order check is unavailable, a proposal is already active, the daily count is reached, or the kill switch is active. Current real MT5 diagnostics remain read-only and fail closed until the isolated evidence path can provide a separately reviewed read-only order check.

@@ -2,9 +2,11 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from uuid import uuid4
 from decimal import Decimal
+from dataclasses import replace
 from .domain import *
 from .storage import Store,dumps,loads
 from .seed import seed,sample_signal
+from .redaction import redact
 
 TZ=ZoneInfo('Africa/Dar_es_Salaam')
 
@@ -53,6 +55,117 @@ class Application:
             a=self.refresh(db,profile,provider_id) if profile in PROFILES else {}
             b=Store.get(db,'broker_profiles',broker_id) or {}; p=Store.get(db,'providers',provider_id) or {}
             return self.engine.evaluate(profile,a,b,p,raw,market)
+
+    def preview_demo_proposal(self,payload):
+        """Run the normal engine with stricter demo-proposal limits, without persistence."""
+        if not isinstance(payload,dict): payload={'malformed_payload':payload}
+        profile=payload.get('account_profile','ACCOUNT_LIVE'); raw=payload.get('signal',{}); market=payload.get('market',{})
+        provider_id=raw.get('provider','') if isinstance(raw,dict) else ''
+        broker_id=payload.get('broker_id','')
+        with self.store.transaction() as db:
+            a=self.refresh(db,profile,provider_id) if profile in PROFILES else {}
+            b=Store.get(db,'broker_profiles',broker_id) or {}; p=Store.get(db,'providers',provider_id) or {}
+            risk=str(decimal(self.settings.demo_max_risk_per_trade_pct)/100)
+            daily=str(decimal(self.settings.demo_max_daily_loss_pct)/100)
+            policy=replace(self.engine.policy,risk_fraction=risk,daily_fraction=daily,max_positions=self.settings.demo_max_open_positions)
+            return DecisionEngine(policy).evaluate(profile,a,b,p,raw,market)
+
+    @staticmethod
+    def _proposal_row(row):
+        value=loads(row['payload']); value.update(id=row['id'],status=row['status'],created_at=row['created_at'],updated_at=row['updated_at'],expires_at=row['expires_at'])
+        return value
+
+    def _proposal_history(self,db,proposal_id,action,old,new,reason,payload=None):
+        secrets=(self.settings.webhook_secret,self.settings.demo_expected_account_login,self.settings.demo_expected_broker_server) if self.settings else ()
+        safe=redact(payload or {},secrets); reason=redact(reason,secrets)
+        db.execute('INSERT INTO demo_trade_proposal_history VALUES(?,?,?,?,?,?,?,?,?)',
+                   (str(uuid4()),proposal_id,action,old,new,'LOCAL_OPERATOR' if action!='CREATED' else 'SYSTEM',reason,dumps(safe),stamp()))
+        Store.audit(db,'DEMO_PROPOSAL_'+action,{'proposal_id':proposal_id,'from_status':old,'to_status':new,'reason':reason,'details':safe,'order_sent':False})
+
+    def _expire_demo_proposals(self,db):
+        now=utcnow()
+        rows=db.execute("SELECT * FROM demo_trade_proposals WHERE status IN ('PENDING_LOCAL_REVIEW','APPROVED_FOR_FUTURE_DEMO_EXECUTION')").fetchall()
+        for row in rows:
+            if date(row['expires_at']) <= now:
+                value=self._proposal_row(row); old=row['status']; value.update(status='EXPIRED',order_sent=False)
+                db.execute('UPDATE demo_trade_proposals SET status=?,updated_at=?,payload=? WHERE id=?',('EXPIRED',stamp(),dumps(value),row['id']))
+                self._proposal_history(db,row['id'],'EXPIRED',old,'EXPIRED','Automatic short-lived expiry')
+
+    def create_demo_proposal(self,raw_webhook_id,signal,decision,account_snapshot,evidence):
+        """Persist a review artifact only. This method has no MT5 dependency or send path."""
+        settings=self.settings
+        if not settings or not settings.demo_trade_proposals_enabled:
+            raise InvalidData('DEMO_TRADE_PROPOSALS_DISABLED')
+        if settings.mode!='SIMULATION':
+            raise InvalidData('DEMO_TRADE_PROPOSALS_REQUIRE_SIMULATION_MODE')
+        if settings.demo_trade_proposal_kill_switch:
+            raise InvalidData('DEMO_TRADE_PROPOSAL_KILL_SWITCH_ACTIVE')
+        if decision.get('decision')!='APPROVED_SIMULATED_TRADE' or decision.get('blocking_factors'):
+            raise InvalidData('RISK_ENGINE_DID_NOT_APPROVE_PROPOSAL')
+        calculations=decision.get('calculations') or {}
+        required=('position_size','estimated_max_loss','reward_risk')
+        if any(calculations.get(key) is None for key in required):
+            raise InvalidData('PROPOSAL_CALCULATION_INCOMPLETE')
+        now=utcnow(); expires=now+timedelta(minutes=settings.demo_proposal_expiry_minutes); proposal_id=str(uuid4())
+        safe_account={key:account_snapshot.get(key) for key in ('balance','equity','margin','margin_free','margin_level','currency','trade_mode','trade_allowed') if key in account_snapshot}
+        proposal={
+            'proposal_type':'DEMO_TRADE_PROPOSAL','signal_id':signal['signal_id'],'alert_id':signal.get('alert_id') or signal['signal_id'],
+            'symbol':signal['mt5_symbol'],'canonical_symbol':signal['symbol'],'direction':signal['direction'],
+            'entry_reference_price':decision.get('entry'),'stop_loss':decision.get('stop_loss'),'take_profit':decision.get('take_profit'),
+            'exact_volume':calculations['position_size'],'monetary_risk':calculations['estimated_max_loss'],'risk_reward':calculations['reward_risk'],
+            'account_snapshot':safe_account,'risk_vetoes':list(decision.get('blocking_factors') or []),
+            'warnings':['DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.','Approval records intent only and cannot submit an MT5 order.'],
+            'risk_validation':decision.get('validation_results',[]),'calculations':calculations,'evidence':evidence,
+            'status':'PENDING_LOCAL_REVIEW','order_sent':False,'execution_implemented':False,
+            'created_at':now.isoformat(),'expires_at':expires.isoformat(),
+        }
+        proposal=redact(proposal,(settings.webhook_secret,settings.demo_expected_account_login,settings.demo_expected_broker_server))
+        with self.store.transaction() as db:
+            self._expire_demo_proposals(db)
+            if db.execute("SELECT 1 FROM demo_trade_proposals WHERE status IN ('PENDING_LOCAL_REVIEW','APPROVED_FOR_FUTURE_DEMO_EXECUTION')").fetchone():
+                raise InvalidData('ONE_ACTIVE_DEMO_PROPOSAL_LIMIT')
+            today=now.date().isoformat()
+            approved=db.execute("SELECT COUNT(*) FROM demo_trade_proposal_history WHERE action='APPROVED' AND substr(created_at,1,10)=?",(today,)).fetchone()[0]
+            if approved >= settings.demo_max_trades_per_day:
+                raise InvalidData('DEMO_MAX_TRADES_PER_DAY_REACHED')
+            db.execute('INSERT INTO demo_trade_proposals VALUES(?,?,?,?,?,?,?,?,?)',
+                       (proposal_id,raw_webhook_id,signal['signal_id'],proposal['alert_id'],'PENDING_LOCAL_REVIEW',proposal['created_at'],proposal['created_at'],proposal['expires_at'],dumps(proposal)))
+            self._proposal_history(db,proposal_id,'CREATED',None,'PENDING_LOCAL_REVIEW','All proposal-only checks passed',{'signal_id':signal['signal_id'],'evidence':evidence})
+        proposal['id']=proposal_id
+        return proposal
+
+    def review_demo_proposal(self,proposal_id,action,reason):
+        mapping={'approve':'APPROVED_FOR_FUTURE_DEMO_EXECUTION','reject':'REJECTED','cancel':'CANCELLED','expire':'EXPIRED'}
+        if action not in mapping or not isinstance(proposal_id,str) or not proposal_id:
+            raise InvalidData('Invalid proposal review action')
+        if not isinstance(reason,str) or len(reason.strip())<3 or len(reason)>500:
+            raise InvalidData('A short local review reason is required')
+        settings=self.settings
+        reason=redact(reason,(settings.webhook_secret,settings.demo_expected_account_login,settings.demo_expected_broker_server)).strip()
+        if action=='approve' and (not settings.demo_trade_proposals_enabled or settings.demo_trade_proposal_kill_switch or settings.mode!='SIMULATION'):
+            raise InvalidData('DEMO_PROPOSAL_APPROVAL_DISABLED')
+        with self.store.transaction() as db:
+            self._expire_demo_proposals(db)
+            row=db.execute('SELECT * FROM demo_trade_proposals WHERE id=?',(proposal_id,)).fetchone()
+            if not row: raise InvalidData('Proposal not found')
+            old=row['status']; allowed=('PENDING_LOCAL_REVIEW',) if action in ('approve','reject','expire') else ('PENDING_LOCAL_REVIEW','APPROVED_FOR_FUTURE_DEMO_EXECUTION')
+            if old not in allowed: raise InvalidData('Proposal is no longer eligible for this action')
+            if action=='approve':
+                approved=db.execute("SELECT COUNT(*) FROM demo_trade_proposal_history WHERE action='APPROVED' AND substr(created_at,1,10)=?",(utcnow().date().isoformat(),)).fetchone()[0]
+                if approved >= settings.demo_max_trades_per_day: raise InvalidData('DEMO_MAX_TRADES_PER_DAY_REACHED')
+            new=mapping[action]; value=self._proposal_row(row)
+            value.update(status=new,review_reason=reason,reviewed_at=stamp(),order_sent=False,execution_implemented=False)
+            db.execute('UPDATE demo_trade_proposals SET status=?,updated_at=?,payload=? WHERE id=?',(new,value['reviewed_at'],dumps(value),proposal_id))
+            self._proposal_history(db,proposal_id,action.upper() if action!='expire' else 'EXPIRED',old,new,reason,{'order_sent':False})
+            return value
+
+    def demo_proposals(self,db=None):
+        if db is None:
+            with self.store.transaction() as connection: return self.demo_proposals(connection)
+        self._expire_demo_proposals(db)
+        proposals=[self._proposal_row(row) for row in db.execute('SELECT * FROM demo_trade_proposals ORDER BY created_at DESC LIMIT 100')]
+        history=[dict(row) for row in db.execute('SELECT * FROM demo_trade_proposal_history ORDER BY created_at DESC LIMIT 300')]
+        return proposals,history
 
     def evaluate(self,payload,trusted_adapter=False,checked_volume=None):
         if not isinstance(payload,dict): payload={'malformed_payload':payload}
@@ -153,20 +266,33 @@ class Application:
         with self.store.transaction() as db:
             accounts=[self.refresh(db,k) for k in PROFILES]
             def docs(table): return [dict(id=r['id'],**{k:v for k,v in loads(r['payload']).items() if k!='id'}) for r in db.execute('SELECT id,payload FROM '+table)]
+            secrets=(self.settings.webhook_secret,self.settings.demo_expected_account_login,self.settings.demo_expected_broker_server) if self.settings else ()
+            def safe_rows(query,fields=('payload',)):
+                rows=[]
+                for source in db.execute(query):
+                    row=dict(source)
+                    for field in fields:
+                        if isinstance(row.get(field),str):
+                            try: row[field]=dumps(redact(loads(row[field]),secrets))
+                            except (ValueError,TypeError): row[field]=redact(row[field],secrets)
+                    rows.append(row)
+                return rows
             brokers=docs('broker_profiles')
             for b in brokers: b['weighted_score']=BrokerResearchService.score(b)
             operating_mode=self.settings.mode if self.settings else 'SIMULATION'
+            proposals,proposal_history=self.demo_proposals(db)
             return dict(mode=operating_mode,legacy_mode=MODE,live_execution_enabled=False,policy=asdict(self.engine.policy),accounts=accounts,brokers=brokers,
                 providers=docs('providers'),provider_metrics=docs('provider_metrics'),provider_daily_performance=docs('provider_daily_performance'),strategies=docs('strategies'),withdrawals=docs('withdrawal_tests'),backtests=docs('backtests'),
                 open_positions=[loads(r['payload']) for r in db.execute("SELECT payload FROM positions WHERE status='OPEN'")],
                 decisions=[loads(r['payload']) for r in db.execute('SELECT payload FROM decisions ORDER BY rowid DESC LIMIT 100')],
-                signals=[dict(r) for r in db.execute('SELECT * FROM signals ORDER BY rowid DESC LIMIT 100')],
+                signals=safe_rows('SELECT * FROM signals ORDER BY rowid DESC LIMIT 100',('raw_payload','normalized_payload')),
                 outcomes=[loads(r['payload']) for r in db.execute('SELECT payload FROM signal_outcomes ORDER BY rowid DESC LIMIT 100')],
-                raw_webhooks=[dict(r) for r in db.execute('SELECT * FROM raw_webhooks ORDER BY received_at DESC LIMIT 100')],
-                normalized_signals=[dict(r) for r in db.execute('SELECT * FROM normalized_signals ORDER BY created_at DESC LIMIT 100')],
+                raw_webhooks=safe_rows('SELECT * FROM raw_webhooks ORDER BY received_at DESC LIMIT 100'),
+                normalized_signals=safe_rows('SELECT * FROM normalized_signals ORDER BY created_at DESC LIMIT 100'),
                 symbol_mappings=[dict(r) for r in db.execute('SELECT * FROM symbol_mappings ORDER BY canonical_symbol,mt5_symbol')],
-                risk_checks=[dict(r) for r in db.execute('SELECT * FROM risk_checks ORDER BY created_at DESC LIMIT 100')],
-                audit=[dict(r) for r in db.execute('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100')],audit_integrity=Store.verify_audit(db))
+                risk_checks=safe_rows('SELECT * FROM risk_checks ORDER BY created_at DESC LIMIT 100'),
+                demo_trade_proposals=proposals,demo_trade_proposal_history=proposal_history,
+                audit=safe_rows('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100'),audit_integrity=Store.verify_audit(db))
     def review(self,kind,key,notes):
         if kind not in ('providers','accounts') or not isinstance(notes,str) or len(notes.strip())<20: raise InvalidData('A review explanation of at least 20 characters is required')
         with self.store.transaction() as db:

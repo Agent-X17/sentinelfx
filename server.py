@@ -50,6 +50,7 @@ def status_document(settings,mt5,port):
     rows=(('System mode',settings.mode),('Database',str(Path(settings.database_path).resolve())),('Dashboard',f'http://127.0.0.1:{port}/'),
           ('TradingView webhook',f'http://127.0.0.1:{port}/api/webhook/tradingview'),('Webhook secret','configured' if settings.webhook_secret else 'not configured'),
           ('Accepted external hosts',allowed),('MT5 diagnostic mode',settings.mt5_diagnostic_mode),('MT5 status',state['code']),
+          ('Demo proposals','ENABLED' if settings.demo_trade_proposals_enabled else 'disabled'),('Proposal kill switch','ACTIVE' if settings.demo_trade_proposal_kill_switch else 'clear'),
           ('Last diagnostic',operational.get('last_diagnostic_at') or 'none'),('Drift latch','ACTIVE' if operational.get('drift_latched') else 'clear'),
           ('MetaTrader5 package','installed' if host['package_available'] else 'not installed'),('Real MT5 host support','available' if host['real_diagnostics_prerequisites_met'] else 'not available on this host'),
           ('Paper-connected eligibility','NOT ELIGIBLE'),('Live execution','DISABLED — not implemented'))
@@ -168,6 +169,8 @@ def make_server(app,port=8765,bridge=None,mt5=None,settings=None):
                     result=app.evaluate({'account_profile':payload.get('account_profile','ACCOUNT_A'),'broker_id':'demo-standard' if payload['scenario']=='standard' else 'demo-cent','signal':s,'market':m})
                 elif path=='/api/close': result=app.close_position(payload.get('position_id'),payload.get('outcome'))
                 elif path=='/api/review': result=app.review(payload.get('kind'),payload.get('id'),payload.get('notes'))
+                elif path=='/api/demo-proposals/review':
+                    result=app.review_demo_proposal(payload.get('proposal_id'),payload.get('action'),payload.get('reason'))
                 elif path=='/api/withdrawals': result=app.withdrawal(payload)
                 elif path=='/api/research':
                     kind=payload.get('kind'); record=payload.get('record')

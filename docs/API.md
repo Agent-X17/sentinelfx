@@ -31,8 +31,9 @@ Base URL: `http://127.0.0.1:8765`.
 2. schema, timestamp and symbol validation;
 3. duplicate detection and raw persistence;
 4. MT5 account/symbol/tick/position reads when connected;
-5. real adapters stop with an evidence block; explicit in-process simulation mocks alone can reach risk preview and exact-volume `order_check`;
-6. full risk re-evaluation and atomic paper/simulation persistence.
+5. when demo proposals are disabled, the existing evidence and simulation behavior remains unchanged;
+6. when demo proposals are enabled, the proposal gate additionally requires a clear kill switch, configured demo identity match, fresh account snapshot, no exposure, stricter risk limits and an exact-volume read-only `order_check`;
+7. a passing proposal candidate is persisted as `PENDING_LOCAL_REVIEW` without creating a paper position or submitting an order.
 
 No route submits an MT5 order.
 
@@ -44,6 +45,7 @@ All other POST routes require the `X-CSRF-Token` returned by `/api/state` and sa
 - `/api/scenario`
 - `/api/close`
 - `/api/review`
+- `/api/demo-proposals/review` — approve for future demo execution, reject, cancel or explicitly expire a proposal; never submits an order.
 - `/api/withdrawals`
 - `/api/research`
 - `/api/backtest`
@@ -74,6 +76,8 @@ Processed bridge responses contain:
 ```
 
 `BUY` or `SELL` means an approved simulation/paper candidate. It never means that a live order was sent.
+
+A proposal response uses `decision: "DEMO_TRADE_PROPOSAL"`, includes the durable proposal, and always includes `order_sent: false`. Local approval changes only its status to `APPROVED_FOR_FUTURE_DEMO_EXECUTION`.
 
 ## HTTP response semantics
 

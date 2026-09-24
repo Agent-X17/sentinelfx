@@ -31,3 +31,18 @@ blocked. A future release needs independent design, implementation and review.
 Never remove the real-evidence gate merely because a terminal connects or a test
 fixture passes. Missing/stale evidence must remain an explicit NO_TRADE condition.
 Stops model risk; they do not guarantee a fill or cap real gap losses.
+
+## Manual-confirmed demo proposal gate
+
+- [x] Proposal feature defaults disabled.
+- [x] Independent local kill switch defaults active.
+- [x] Local proposal mutations require CSRF and local Host/Origin checks.
+- [x] Durable proposal and append-only transition history exist.
+- [x] One active pending/approved proposal is database-enforced.
+- [x] Short automatic expiry is implemented.
+- [x] Approval records future intent only and sends no order.
+- [x] Account identity and credential fields are redacted from proposal views and audits.
+- [ ] Verify the real isolated MT5 read-only order-check boundary on a supported Windows demo host.
+- [ ] Complete a fresh account reconciliation and prove snapshot freshness on that host.
+- [ ] Conduct a separate security/code review before adding any manually confirmed execution path.
+- [ ] Implement and test a distinct one-order demo execution release; it does not exist here.

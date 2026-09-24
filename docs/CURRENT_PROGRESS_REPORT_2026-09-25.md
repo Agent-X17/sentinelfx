@@ -228,3 +228,9 @@ An incoming agent should answer these before claiming readiness:
 Share the repository branch and this report. Do not share `.env`, `.sentinelfx-webhook-secret`, `.tradingview-local/`, SQLite databases, MT5 passwords, account IDs or temporary tunnel URLs.
 
 The full historical implementation report remains in `docs/FULL_PROJECT_REPORT.md`. This dated report supersedes its older runtime/test counts and records the manually verified TradingView and MT5 progress completed after that report.
+
+## Update: manual-confirmed demo proposals
+
+Implemented the first pre-execution step as a proposal-only workflow. A feature-gated TradingView candidate can be sized under a 0.25% maximum risk rule and persisted as `PENDING_LOCAL_REVIEW` only after authentication, freshness, replay, symbol, exposure, account-identity, demo-account, risk, and read-only order-check gates pass. Approval records `APPROVED_FOR_FUTURE_DEMO_EXECUTION` and an audit event. It cannot send an MT5 order or create a paper position.
+
+The feature defaults off and the independent kill switch defaults on. Proposal mutations are local-only and CSRF protected. One active proposal is enforced in SQLite, proposals expire automatically, history is append-only, and account identity/credential fields are redacted. Real MT5 proposal eligibility remains blocked until the isolated adapter can provide complete verified evidence and a separately reviewed order-check boundary.

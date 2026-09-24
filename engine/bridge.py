@@ -3,7 +3,7 @@ from decimal import Decimal
 from dataclasses import replace
 from uuid import uuid4
 
-from .domain import InvalidData, decimal, stamp
+from .domain import InvalidData, decimal, stamp, date, utcnow
 from .storage import Store, dumps, loads
 from .mt5 import MockMT5Service
 from .redaction import redact
@@ -84,6 +84,8 @@ class TradingBridge:
             if not check.accepted:
                 return {"accepted": False, "status": check.status, "decision": "NO_TRADE", "reason": check.reason, "block_source":"WEBHOOK_VALIDATION", "raw_webhook_id": raw_id}
 
+        check.signal['alert_id'] = check.alert_id
+
         if self.settings.mode == "DISCONNECTED":
             return self._blocked(raw_id, check.signal, "SYSTEM_DISCONNECTED")
 
@@ -105,6 +107,9 @@ class TradingBridge:
                 return self._blocked(raw_id, check.signal, 'MT5_EXPOSURE_UNKNOWN')
             if exposure.data['items']:
                 return self._blocked(raw_id, check.signal, 'MT5_EXTERNAL_EXPOSURE')
+
+        if self.settings.demo_trade_proposals_enabled:
+            return self._demo_proposal(raw_id,check.signal,symbol_result,tick_result,account_result,positions_result,orders_result,mt5_state)
 
         # Only the explicit in-process test adapter may use synthetic evidence.
         # No webhook field or environment flag can enable this fixture path.
@@ -135,8 +140,9 @@ class TradingBridge:
                 Store.put(db, "providers", "tradingview", provider)
             db.execute("INSERT INTO normalized_signals(id,raw_webhook_id,status,payload,created_at) VALUES(?,?,?,?,?)", (check.signal["signal_id"], raw_id, "waiting_for_validation", dumps(check.signal), stamp()))
             db.execute("INSERT INTO broker_snapshots(id,raw_webhook_id,payload,created_at) VALUES(?,?,?,?)", (str(uuid4()), raw_id, dumps({"symbol":symbol_result.data,"tick":tick_result.data}), stamp()))
-            db.execute("INSERT INTO account_snapshots(id,raw_webhook_id,payload,created_at) VALUES(?,?,?,?)", (str(uuid4()), raw_id, dumps(account_result.data), stamp()))
-            Store.audit(db, "MT5_VALIDATION", {"raw_webhook_id":raw_id,"symbol":symbol_result.to_dict(),"tick":tick_result.to_dict(),"account":account_result.to_dict()})
+            safe_account=redact(account_result.data,(self.authenticator.secret,))
+            db.execute("INSERT INTO account_snapshots(id,raw_webhook_id,payload,created_at) VALUES(?,?,?,?)", (str(uuid4()), raw_id, dumps(safe_account), stamp()))
+            Store.audit(db, "MT5_VALIDATION", redact({"raw_webhook_id":raw_id,"symbol":symbol_result.to_dict(),"tick":tick_result.to_dict(),"account":account_result.to_dict()},(self.authenticator.secret,)))
 
         check.signal["provider"] = "tradingview"
         evaluation_payload = {"account_profile":profile,"broker_id":"mt5-runtime","signal":check.signal,"market":market,"system_mode":self.settings.mode}
@@ -210,6 +216,73 @@ class TradingBridge:
             db.execute('UPDATE normalized_signals SET status=? WHERE raw_webhook_id=?', ('NO_TRADE', raw_id))
             Store.audit(db, "EXECUTION_BLOCKED", result)
         return result
+
+    def _demo_proposal(self,raw_id,signal,symbol_result,tick_result,account_result,positions_result,orders_result,mt5_state):
+        if self.settings.mode!='SIMULATION':
+            return self._blocked(raw_id,signal,'DEMO_TRADE_PROPOSALS_REQUIRE_SIMULATION_MODE')
+        if self.settings.demo_trade_proposal_kill_switch:
+            return self._blocked(raw_id,signal,'DEMO_TRADE_PROPOSAL_KILL_SWITCH_ACTIVE')
+        failures=validate_diagnostics(signal,symbol_result.data,tick_result.data,account_result.data)
+        expected_login=self.settings.demo_expected_account_login
+        expected_server=self.settings.demo_expected_broker_server
+        if not expected_login or not expected_server:
+            failures.append('MT5_EXPECTED_DEMO_ACCOUNT_NOT_CONFIGURED')
+        else:
+            failures=[item for item in failures if item!='MT5_ACCOUNT_RECONCILIATION_UNVERIFIED']
+            if str(account_result.data.get('login'))!=expected_login or account_result.data.get('server')!=expected_server:
+                failures.append('MT5_ACCOUNT_MISMATCH')
+        if account_result.data.get('trade_mode') not in (0,'DEMO'):
+            failures.append('MT5_ACCOUNT_NOT_CONFIRMED_DEMO')
+        try:
+            age=(utcnow()-date(account_result.data.get('snapshot_at'))).total_seconds()
+            if not 0 <= age <= 30: failures.append('MT5_ACCOUNT_SNAPSHOT_STALE_OR_FUTURE')
+        except InvalidData:
+            failures.append('MT5_ACCOUNT_SNAPSHOT_TIMESTAMP_MISSING')
+        if type(self.mt5) is not MockMT5Service:
+            failures.append('MT5_PROPOSAL_ORDER_CHECK_UNAVAILABLE')
+        failures=list(dict.fromkeys(failures))
+        evidence={'diagnostic_checks':'PASSED' if not failures else 'FAILED','failures':failures,'account_identity_match':not any(x in failures for x in ('MT5_EXPECTED_DEMO_ACCOUNT_NOT_CONFIGURED','MT5_ACCOUNT_MISMATCH')),
+                  'quote_fresh':not any('STALE' in x or 'FUTURE' in x for x in failures),'external_exposure':False,
+                  'positions_count':len(positions_result.data['items']),'orders_count':len(orders_result.data['items']),'order_check':'NOT_RUN'}
+        if failures:
+            return self._blocked(raw_id,signal,failures[0],{'proposal_evidence':evidence})
+        try:
+            broker,market=self._broker_inputs(signal,symbol_result.data,tick_result.data,account_result.data)
+        except InvalidData as exc:
+            return self._blocked(raw_id,signal,'BROKER_VALIDATION_FAILED',{'message':str(exc)})
+        profile=self.settings.default_account_profile
+        safe_account=redact(account_result.data,(self.authenticator.secret,expected_login,expected_server))
+        with self.application.store.transaction() as db:
+            account=Store.get(db,'accounts',profile)
+            if account is None: return self._blocked(raw_id,signal,'CONFIGURED_ACCOUNT_PROFILE_MISSING')
+            Store.put(db,'broker_profiles','mt5-runtime',broker)
+            provider=Store.get(db,'providers','tradingview')
+            if provider is None:
+                provider={'id':'tradingview','name':'TradingView webhook','status':'ACTIVE','verified_status':True,'live_status':'SYNTHETIC','risk_flags':[],'trade_count':1000,'age_days':365,'current_drawdown':'0','consecutive_losses':0,'data_quality':'0.9'}
+                Store.put(db,'providers','tradingview',provider)
+            db.execute('INSERT INTO normalized_signals(id,raw_webhook_id,status,payload,created_at) VALUES(?,?,?,?,?)',(signal['signal_id'],raw_id,'waiting_for_proposal',dumps(signal),stamp()))
+            db.execute('INSERT INTO broker_snapshots(id,raw_webhook_id,payload,created_at) VALUES(?,?,?,?)',(str(uuid4()),raw_id,dumps(redact({'symbol':symbol_result.data,'tick':tick_result.data},(expected_login,expected_server))),stamp()))
+            db.execute('INSERT INTO account_snapshots(id,raw_webhook_id,payload,created_at) VALUES(?,?,?,?)',(str(uuid4()),raw_id,dumps(safe_account),stamp()))
+            Store.audit(db,'MT5_PROPOSAL_EVIDENCE',{'raw_webhook_id':raw_id,'evidence':evidence,'account':safe_account})
+        evaluation_payload={'account_profile':profile,'broker_id':'mt5-runtime','signal':signal,'market':market,'system_mode':self.settings.mode}
+        decision=self.application.preview_demo_proposal(evaluation_payload)
+        volume=decision.get('calculations',{}).get('position_size')
+        if decision.get('decision')!='APPROVED_SIMULATED_TRADE' or volume is None:
+            reason=(decision.get('blocking_factors') or ['RISK_ENGINE_DID_NOT_APPROVE_PROPOSAL'])[0]
+            return self._blocked(raw_id,signal,reason,{'proposal_evidence':evidence,'risk':decision})
+        order_check=self.mt5.order_check({'symbol':signal['mt5_symbol'],'type':signal['direction'],'volume':volume,'price':market['price'],'sl':signal['stop_loss'],'tp':signal.get('take_profit')})
+        if not order_check.ok:
+            return self._blocked(raw_id,signal,order_check.code,{'proposal_evidence':evidence,'order_check':order_check.to_dict()})
+        evidence['order_check']='PASSED'; evidence['exact_checked_volume']=volume; evidence['evidence_source']='SYNTHETIC_TEST_FIXTURE' if type(self.mt5) is MockMT5Service else 'VERIFIED_READ_ONLY_MT5'
+        try:
+            proposal=self.application.create_demo_proposal(raw_id,signal,decision,account_result.data,evidence)
+        except InvalidData as exc:
+            return self._blocked(raw_id,signal,str(exc))
+        with self.application.store.transaction() as db:
+            db.execute('UPDATE raw_webhooks SET status=?,reason=? WHERE id=?',('processed','DEMO_TRADE_PROPOSAL_CREATED',raw_id))
+            db.execute('UPDATE normalized_signals SET status=? WHERE id=?',('PENDING_LOCAL_REVIEW',signal['signal_id']))
+            db.execute('INSERT INTO risk_checks(id,signal_id,payload,created_at) VALUES(?,?,?,?)',(str(uuid4()),signal['signal_id'],dumps(redact(decision,(expected_login,expected_server))),stamp()))
+        return {'accepted':True,'status':'processed','decision':'DEMO_TRADE_PROPOSAL','reason':'PENDING_LOCAL_REVIEW','proposal':proposal,'raw_webhook_id':raw_id,'mt5':mt5_state.to_dict(),'order_sent':False}
 
     @staticmethod
     def _broker_inputs(signal, symbol, tick, account):

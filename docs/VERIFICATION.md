@@ -8,7 +8,7 @@ The current authoritative gate is:
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
 ```
 
-Verified again on 2026-09-25: `ACCEPTANCE RESULT: PASS`; **181 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. The added tests cover the separate read-only Mac MT5 demo monitor. See [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md) and [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md).
+Verified again on 2026-09-25: `ACCEPTANCE RESULT: PASS`; **193 tests passed**. The gate also passed startup truth, status, health, valid/bad-secret/stale/duplicate/missing-stop/unmapped/invalid-host webhook cases, persisted dashboard and audit state, live configuration refusal, `order_send()` refusal, missing live HTTP route, and frontend syntax. The proposal tests cover disabled defaults, valid proposal creation, stale/mismatched/exposed evidence, replay, no-send approval, reject/cancel/expiry, one-active limit, CSRF, kill switch, audit completeness and secret redaction. See [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md) and [OPERATIONAL_ACCEPTANCE.md](OPERATIONAL_ACCEPTANCE.md).
 
 Real Chromium automation is still blocked on this task host: Chrome exits before creating `DevToolsActivePort`, including with `--no-sandbox --disable-gpu`. The updated DOM fallback passed all eight pages, simulated open/close, webhook diagnostics, explicit block-source rendering, and no script errors. No visual-browser success is claimed.
 
@@ -43,7 +43,7 @@ python3 -B server.py --port 8877 --db /tmp/sentinelfx-readiness.QO3Alp/review.sq
 
 - Root, app.js, style.css, health and state: HTTP 200.
 - Initial equity A/B/C/ACCOUNT_LIVE: 50/100/150/300; audit integrity valid.
-- Migrations: 1, 2, 3.
+- Migrations: 1, 2, 3, 4.
 - Dashboard requests to /api/execute, /api/live and /api/order_send: 404.
 - Separate actual startup subprocesses refused LIVE_EXECUTION_ENABLED=true and LIVE_GATED with exit code 1 and explanatory messages.
 - Actual running server confirmed 401 wrong secret, 200 NO_TRADE/MT5_DISABLED, 409 duplicate and 400 missing stop. Existing HTTP regressions additionally check mock success and 422 stale rejection.

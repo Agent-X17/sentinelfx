@@ -38,7 +38,9 @@ def webhook(base,case):
 try:
     env=dict(os.environ,SYSTEM_MODE='SIMULATION',MT5_DIAGNOSTIC_MODE='mock',MT5_ENABLED='false',MT5_TERMINAL_PATH='',
         LIVE_EXECUTION_ENABLED='false',TRADINGVIEW_WEBHOOK_SECRET=SECRET,WEBHOOK_ALLOWED_HOSTS='',WEBHOOK_MAX_AGE_SECONDS='300',
-        DEFAULT_ACCOUNT_PROFILE='ACCOUNT_LIVE',EXPLICIT_ORDER_CONFIRMATION_REQUIRED='true')
+        DEFAULT_ACCOUNT_PROFILE='ACCOUNT_LIVE',EXPLICIT_ORDER_CONFIRMATION_REQUIRED='true',
+        DEMO_TRADE_PROPOSALS_ENABLED='false',DEMO_TRADE_PROPOSAL_KILL_SWITCH='true',
+        DEMO_EXPECTED_ACCOUNT_LOGIN='',DEMO_EXPECTED_BROKER_SERVER='')
     command=[sys.executable,'-B','server.py','--demo','--db',str(DB),'--port','0']
     server=subprocess.Popen(command,cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     lines=[];base=None

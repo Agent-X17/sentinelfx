@@ -186,7 +186,7 @@ class DatabaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path=str(Path(folder)/'db.sqlite3')
             with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(lambda _:Store(path),range(4)))
-            with sqlite3.connect(path) as db:self.assertEqual(db.execute('SELECT version FROM schema_migrations').fetchall(),[(1,),(2,),(3,)])
+            with sqlite3.connect(path) as db:self.assertEqual(db.execute('SELECT version FROM schema_migrations').fetchall(),[(1,),(2,),(3,),(4,)])
 
     def test_backup_restore_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:

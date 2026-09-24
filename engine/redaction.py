@@ -15,7 +15,7 @@ def redact(value, secrets=()):
             result = {}
             for key, child in item.items():
                 normalized = re.sub(r'[^a-z0-9]', '', str(key).lower())
-                if any(word in normalized for word in ('secret', 'password', 'token', 'authorization', 'apikey', 'privatekey', 'credential')):
+                if any(word in normalized for word in ('secret', 'password', 'token', 'authorization', 'apikey', 'privatekey', 'credential', 'accountnumber')) or normalized in ('login','server','brokerserver'):
                     result[clean(str(key))] = '[REDACTED]'
                 else:
                     result[clean(str(key))] = walk(child, depth+1)
