@@ -185,6 +185,42 @@ class ClockObservationTests(unittest.TestCase):
 
 
 class VerifierTimeTests(unittest.TestCase):
+    def test_same_tick_polling_spread_is_not_offset_instability(self):
+        samples = [{'raw_time_msc':1790369298165,
+                    'raw_minus_call_midpoint_seconds':offset}
+                   for offset in (10799.4646778, 10798.0338173, 10796.6524187)]
+        with redirect_stdout(io.StringIO()):
+            result = verifier.summarize_samples(samples)
+        self.assertEqual(result['apparent_offset_status'], 'UNVERIFIED_SAME_TICK_REPEATED')
+        self.assertEqual(result['tick_progression'], 'BLOCKED_NOT_ADVANCING')
+        self.assertFalse(result['trusted_for_normalization'])
+        self.assertAlmostEqual(result['apparent_offset_spread_seconds'], 2.8122591)
+
+    def test_advancing_ticks_do_not_prove_offset_stability(self):
+        samples = [{'raw_time_msc':1790369298165 + index * 1000,
+                    'raw_minus_call_midpoint_seconds':10799.4} for index in range(3)]
+        with redirect_stdout(io.StringIO()):
+            result = verifier.summarize_samples(samples)
+        self.assertEqual(result['apparent_offset_status'], 'UNVERIFIED_TICK_DELIVERY_AGE_UNKNOWN')
+        self.assertFalse(result['trusted_for_normalization'])
+
+    def test_report_save_error_preserves_timestamp_failure(self):
+        data = fixture()
+        data['symbol_info_tick']['data']['time'] += 10800
+        data['symbol_info_tick']['data']['time_msc'] += 10800000
+        original_parse = verifier.argparse.ArgumentParser.parse_args
+        def arguments(parser, *args, **kwargs):
+            result = original_parse(parser, *args, **kwargs)
+            result.report_file = 'unwritable-report.json'
+            return result
+        with patch.object(verifier.argparse.ArgumentParser, 'parse_args', arguments), \
+             patch.object(Path, 'write_text', side_effect=OSError('private path')):
+            code, output = self.run_verifier([data])
+        self.assertEqual(code, 1)
+        self.assertIn('Support report: SAVE_FAILED', output)
+        self.assertIn('REASON: MT5_TICK_STALE_OR_FUTURE', output)
+        self.assertNotIn('private path', output)
+
     def run_verifier(self, snapshots, samples=1):
         output = io.StringIO()
         env = {'SYSTEM_MODE': 'SIMULATION', 'LIVE_EXECUTION_ENABLED': 'false',

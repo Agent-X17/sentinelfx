@@ -95,11 +95,23 @@ def summarize_samples(samples):
         progression = "BLOCKED_NOT_ADVANCING"
     usable = [value for value in offsets if type(value) in (int, float)]
     spread = max(usable) - min(usable) if len(usable) == len(samples) and usable else None
-    status = "STABLE_DIAGNOSTIC_ONLY_UNTRUSTED" if spread is not None and spread <= 2 else "UNSTABLE_OR_UNAVAILABLE"
+    # Re-reading an identical last tick measures elapsed polling time, not a
+    # change in broker offset. Even distinct ticks have unknown delivery age.
+    status = "UNVERIFIED_TICK_DELIVERY_AGE_UNKNOWN"
+    if not valid_raw or spread is None:
+        status = "UNAVAILABLE_INVALID_EVIDENCE"
+    elif len(raw) < 2:
+        status = "UNVERIFIED_SINGLE_SAMPLE"
+    elif len(set(raw)) == 1:
+        status = "UNVERIFIED_SAME_TICK_REPEATED"
+    elif not nondecreasing:
+        status = "UNVERIFIED_TICK_TIME_REGRESSED"
     print("Repeated tick progression:", progression)
     print("Apparent offset stability:", status)
     print("Apparent offset spread seconds:", round(spread, 6) if spread is not None else "UNAVAILABLE")
     print("Offset use: NONE — observation is not independent proof.")
+    if status == "UNVERIFIED_SAME_TICK_REPEATED":
+        print("Sampling note: the same tick was read repeatedly; spread reflects elapsed polling time, not proven offset drift.")
     return {"tick_progression": progression,
             "apparent_offset_status": status, "apparent_offset_spread_seconds": spread,
             "trusted_for_normalization": False}
@@ -150,7 +162,11 @@ def main():
                       "samples":diagnostic_samples, "repeated_analysis":repeated,
                       "result":"BLOCKED_NO_TRADE" if first_failure else "PASS_READ_ONLY_ONLY",
                       "reason":first_failure}
-            Path(args.report_file).write_text(json.dumps(report, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+            try:
+                Path(args.report_file).write_text(json.dumps(report, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+            except OSError:
+                print("Support report: SAVE_FAILED — choose an existing writable folder.")
+                return blocked(first_failure or "MT5_REPORT_SAVE_FAILED")
             print("Redacted support report saved:", args.report_file)
         if first_failure:
             return blocked(first_failure)

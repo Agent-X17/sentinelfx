@@ -36,12 +36,26 @@ The safe correction is stricter interpretation and diagnostics, **not** automati
 5. The worker records wall-clock start/end and monotonic elapsed time. Reject backward clock steps, elapsed discrepancies greater than 250 ms, inconsistent capture time, missing evidence, and snapshots outside 30 seconds. This validates elapsed-time consistency only; it does not prove absolute UTC accuracy or authorize an offset.
 6. The verifier prints only allowlisted numeric raw timestamps, UTC candidate, normalized UTC when valid, clock consistency, trusted-offset availability and freshness. It does not print the account identity, terminal path or entire native snapshot.
 7. Every native read is surrounded by Windows UTC-before, UTC-after and monotonic elapsed captures. The report includes the MT5 Python package version, terminal build, exact symbol and a SHA-256 server fingerprint; it never includes the server name, login or terminal path.
-8. `--time-samples 3` obtains three bounded snapshots one second apart. It checks `time_msc / 1000` against `time`, nondecreasing tick progression, every raw tick against its own call interval, and the spread of the apparent difference. A stable result is labelled `STABLE_DIAGNOSTIC_ONLY_UNTRUSTED`; it is never applied.
+8. `--time-samples 3` obtains three bounded snapshots one second apart. It checks `time_msc / 1000` against `time`, tick progression, every raw tick against its own call interval, and the spread of the apparent difference. Repeated identical ticks are labelled `UNVERIFIED_SAME_TICK_REPEATED`: the spread is elapsed polling time, not proof of offset drift. Advancing ticks still have unknown delivery age, so no stability threshold authorizes an offset.
 9. `--report-file` writes only allowlisted, redacted fields in a reproducible JSON support report. It records the raw values separately from normalized UTC and explicitly states that no offset was applied and no order was sent.
 
 The production snapshot validator uses the same timestamp evaluator. The worker and validator must be updated together: older envelopes lacking `clock_observation` fail closed. No database migration, HTTP route, offset environment variable, external time network request, or execution feature was added.
 
 ## Nonzero-offset status: structurally testable, unavailable in production
+
+### Windows report analysis, 2026-09-25
+
+The uploaded report contains the identical raw tick in all three reads:
+`time=1790369298`, `time_msc=1790369298165`. These fields agree. Host call
+midpoints advance by approximately 2.812259 seconds while the tick stays fixed;
+the apparent difference falls by exactly that amount. The earlier diagnostic
+label `UNSTABLE_OR_UNAVAILABLE` did not establish changing offset semantics.
+The wording is corrected without changing the freshness gate or permitting an
+unverified timestamp. The roughly three-hour discrepancy remains unexplained.
+Package version is 5.0.6180 and terminal build is 6182. No private identity is
+needed in a public report. A report-write failure now has its own message and
+preserves the original timestamp-block reason instead of hiding it behind a
+generic verification failure. Regression verification: 33 timestamp tests pass.
 
 There is no trustworthy nonzero-offset source for the current account/runtime. Stable nonzero offsets are explicitly tested to remain blocked. A synthetic unit test proves that the offline validator accepts a correction only when every required, versioned evidence binding is present. That fixture does not establish a real broker policy, and the production snapshot path deliberately supplies no policy. The current Windows result therefore remains blocked.
 
