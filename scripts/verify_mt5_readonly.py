@@ -2,6 +2,7 @@
 """Redaction-safe Windows MT5 read-only verification. Never submits an order."""
 import argparse
 import sys
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,9 +10,10 @@ ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 
 from engine.config import Settings
-from engine.domain import InvalidData
+from engine.domain import InvalidData, utcnow, date
 from engine.isolated_mt5 import IsolatedMT5Service,SnapshotMT5
 from engine.mt5_evidence import validate_order_request,validate_snapshot
+from engine.mt5_time import tick_time_evidence, validate_clock_observation
 
 
 def blocked(code):
@@ -21,11 +23,40 @@ def blocked(code):
     return 1
 
 
+def print_tick_time(data):
+    """Print only numeric timestamps and fixed labels, never the raw envelope."""
+    envelope = data.get("symbol_info_tick") if isinstance(data, dict) else None
+    tick = envelope.get("data") if isinstance(envelope, dict) and envelope.get("ok") is True else None
+    now = utcnow()
+    timing = tick_time_evidence(tick, now)
+    try:
+        validate_clock_observation(data.get("clock_observation"), now, date(data.get("captured_at")))
+        clock_status = "CONSISTENT_ELAPSED_TIME_ONLY"
+    except (InvalidData, AttributeError):
+        clock_status = "BLOCKED"
+        timing.update(normalized_utc=None, freshness="BLOCKED")
+    print("Collection clock consistency:", clock_status)
+    print("Raw tick time (seconds):", timing["raw_time"] if timing["raw_time"] is not None else "UNAVAILABLE")
+    print("Raw tick time_msc (milliseconds):", timing["raw_time_msc"] if timing["raw_time_msc"] is not None else "UNAVAILABLE")
+    print("Trusted offset status:", timing["trusted_offset_status"])
+    print("Applied offset seconds:", timing["applied_offset_seconds"])
+    print("Documented UTC candidate:", timing["documented_utc_candidate"] or "UNAVAILABLE")
+    print("Normalized UTC tick timestamp:", timing["normalized_utc"] or "UNAVAILABLE — TIMESTAMP NOT VERIFIED")
+    print("Tick age seconds:", timing["age_seconds"] if timing["age_seconds"] is not None else "UNAVAILABLE")
+    print("Timestamp freshness (30-second limit):", timing["freshness"])
+    print("Timestamp reason:", timing["code"])
+    print("Clock note: host clock is not independent proof of broker timestamp semantics.")
+
+
 def main():
     parser=argparse.ArgumentParser(description="Verify redacted read-only MT5 demo evidence")
     parser.add_argument("--symbol",required=True,help="Exact MT5 Market Watch symbol")
     parser.add_argument("--order-check",action="store_true",help="Also run one non-submitting minimum-volume order_check")
+    parser.add_argument("--time-samples", type=int, choices=range(1, 6), default=1,
+                        help="Collect 1–5 read-only snapshots; no offset is learned")
     args=parser.parse_args()
+    if args.time_samples != 1 and args.order_check:
+        parser.error("--time-samples cannot be combined with --order-check")
     service=None
     try:
         settings=Settings.from_env(ROOT)
@@ -36,8 +67,21 @@ def main():
         if not settings.demo_expected_account_login or not settings.demo_expected_broker_server:
             return blocked("EXPECTED_DEMO_IDENTITY_NOT_CONFIGURED")
         service=IsolatedMT5Service(True,settings.mt5_terminal_path)
-        data=service.snapshot(args.symbol)
-        summary=validate_snapshot(data,{"mt5_symbol":args.symbol},settings.demo_expected_account_login,settings.demo_expected_broker_server)
+        first_failure = None
+        for index in range(args.time_samples):
+            if index:
+                time.sleep(1)
+            print("Time sample:", index + 1, "of", args.time_samples)
+            data=service.snapshot(args.symbol)
+            print_tick_time(data)
+            try:
+                summary=validate_snapshot(data,{"mt5_symbol":args.symbol},settings.demo_expected_account_login,settings.demo_expected_broker_server)
+            except InvalidData as exc:
+                # A later passing sample cannot erase an earlier failure.
+                first_failure = first_failure or str(exc)
+                print("Sample result: BLOCKED / NO_TRADE")
+        if first_failure:
+            return blocked(first_failure)
         print("SNAPSHOT: PASS")
         print("Demo identity: MATCHED (value hidden)")
         print("Terminal: CONNECTED; Algo Trading: OFF")

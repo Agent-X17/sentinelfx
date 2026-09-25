@@ -1,6 +1,7 @@
 """Isolated diagnostic process. No configurable module, mock or send operation."""
 import json
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from .mt5 import MT5Service
 from .domain import stamp
@@ -8,6 +9,7 @@ from .mt5_evidence import PROTOCOL
 
 
 def collect(adapter, symbol=None):
+    wall_start, monotonic_start = time.time(), time.monotonic()
     results = {'protocol':PROTOCOL,'operation':'snapshot','status': adapter.status().to_dict()}
     if not results['status']['ok'] or symbol is None:
         return results
@@ -25,7 +27,12 @@ def collect(adapter, symbol=None):
         results['status'] = {'ok':False,'code':'MT5_ACCOUNT_CHANGED','message':'Account identity changed during diagnostics','data':None}
     elif not adapter.status().ok:
         results['status'] = {'ok':False,'code':'MT5_DISCONNECTED','message':'Terminal disconnected during diagnostics','data':None}
-    results['captured_at'] = stamp()
+    wall_end = time.time()
+    results['clock_observation'] = {
+        'wall_start': wall_start, 'wall_end': wall_end,
+        'monotonic_elapsed': time.monotonic() - monotonic_start,
+    }
+    results['captured_at'] = datetime.fromtimestamp(wall_end, timezone.utc).isoformat()
     return results
 
 

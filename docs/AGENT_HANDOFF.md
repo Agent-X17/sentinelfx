@@ -1,5 +1,7 @@
 # Independent agent handoff
 
+Current Windows blocker: see [MT5 timestamp investigation](MT5_TIMESTAMP_INVESTIGATION.md). A roughly three-hour future tick remains NO_TRADE; no trusted nonzero offset is available. Keep proposals disabled and the kill switch active.
+
 Start with [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md). It records the latest repository acceptance result plus the manually verified TradingView delivery and Mac MT5 demo-monitor progress. It supersedes older runtime and test counts in historical reports.
 
 ## Execution and evidence boundary

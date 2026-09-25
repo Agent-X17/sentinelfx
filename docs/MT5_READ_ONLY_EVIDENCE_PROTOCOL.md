@@ -52,3 +52,9 @@ Persisted and displayed evidence omits the login and broker server. Credential-l
 8. Confirm the proposal states **DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.** Clicking Approve changes only the audited status to `APPROVED_FOR_FUTURE_DEMO_EXECUTION`.
 
 This procedure verifies proposal evidence. It does not approve or test execution.
+
+## Timestamp consistency amendment
+
+The snapshot now requires `clock_observation` containing numeric `wall_start`, `wall_end` (host epoch seconds) and `monotonic_elapsed` (seconds). Missing measurements, backward wall time, wall/monotonic disagreement over 250 ms, inconsistent capture time, or expired observations block. This is elapsed-clock validation, not an independent UTC authority.
+
+Native `time` and `time_msc` must be positive integers agreeing at whole-second precision. UTC epoch conversion uses no local timezone adjustment. The unchanged 30-second age gate rejects future values. No supplied offset or normalized timestamp is accepted from a snapshot/webhook. See [the timestamp investigation](MT5_TIMESTAMP_INVESTIGATION.md) for the unresolved broker/runtime discrepancy and the independent evidence required before any nonzero normalization.

@@ -1,5 +1,7 @@
 # Windows MT5 demo verification guide
 
+Current Windows blocker: see [MT5 timestamp investigation](MT5_TIMESTAMP_INVESTIGATION.md). A roughly three-hour future tick remains NO_TRADE; no trusted nonzero offset is available. Keep proposals disabled and the kill switch active.
+
 This guide verifies read-only evidence. It does not enable proposals or trading.
 
 Keep these values for every step:

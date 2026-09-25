@@ -22,6 +22,7 @@ def fixture():
     now=time.time()
     return {
         'protocol':PROTOCOL,'operation':'snapshot','captured_at':stamp(),
+        'clock_observation':{'wall_start':now,'wall_end':now,'monotonic_elapsed':0},
         'status':{'ok':True,'code':'MT5_CONNECTED','message':'connected','data':None},
         'terminal_info':ok({'connected':True,'trade_allowed':False}),
         'account_info':ok({'login':900001,'server':'DEMO-SERVER','currency':'USD','trade_mode':0,'trade_allowed':True,
@@ -29,7 +30,7 @@ def fixture():
         'symbol_info':ok({'name':'EURUSD.a','visible':True,'trade_mode':4,'trade_contract_size':1000,'volume_min':.01,
                           'volume_max':100,'volume_step':.01,'point':.00001,'digits':5,'trade_stops_level':0,
                           'trade_freeze_level':0,'filling_mode':1}),
-        'symbol_info_tick':ok({'time':now,'time_msc':int(now*1000),'bid':1.1000,'ask':1.1001}),
+        'symbol_info_tick':ok({'time':int(now),'time_msc':int(now*1000),'bid':1.1000,'ask':1.1001}),
         'positions_get':ok({'items':[]}),'orders_get':ok({'items':[]}),'recent_deals':ok({'items':[]}),'recent_orders':ok({'items':[]}),
     }
 
@@ -65,7 +66,7 @@ class EvidenceValidationTests(unittest.TestCase):
     def test_symbol_tick_and_microstructure_fail_closed(self):
         self.rejected(lambda x:x['symbol_info']['data'].update(name='GBPUSD'),'MT5_SYMBOL_IDENTITY_UNVERIFIED')
         self.rejected(lambda x:x['symbol_info']['data'].pop('filling_mode'),'MT5_SYMBOL_PROPERTIES_INVALID')
-        self.rejected(lambda x:x['symbol_info_tick']['data'].update(time=time.time()-60,time_msc=int((time.time()-60)*1000)),'MT5_TICK_STALE_OR_FUTURE')
+        self.rejected(lambda x:x['symbol_info_tick']['data'].update(time=int(time.time()-60),time_msc=int((time.time()-60)*1000)),'MT5_TICK_STALE_OR_FUTURE')
     def test_exact_request_obeys_grid_precision_and_stop_level(self):
         value=fixture();value['symbol_info']['data']['trade_stops_level']=20
         valid={'type':'BUY','volume':'0.01','price':'1.10010','sl':'1.09800','tp':'1.10450'}

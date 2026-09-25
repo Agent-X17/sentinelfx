@@ -2,10 +2,11 @@
 from decimal import Decimal
 
 from .domain import InvalidData, date, decimal, utcnow
+from .mt5_time import MAX_TICK_AGE_SECONDS, tick_time_evidence, validate_clock_observation
 
 
 PROTOCOL = "sentinelfx.mt5.readonly-evidence.v1"
-MAX_AGE_SECONDS = 30
+MAX_AGE_SECONDS = MAX_TICK_AGE_SECONDS
 
 
 def _result(snapshot, name):
@@ -46,6 +47,8 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
     status = snapshot.get("status")
     if not isinstance(status, dict) or status.get("ok") is not True:
         raise InvalidData((status or {}).get("code", "MT5_EVIDENCE_STATUS_MISSING"))
+
+    validate_clock_observation(snapshot.get("clock_observation"), now, date(snapshot["captured_at"]))
 
     terminal = _result(snapshot, "terminal_info")
     if terminal.get("connected") is not True:
@@ -93,14 +96,9 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
         raise InvalidData("MT5_SYMBOL_PROPERTIES_INVALID")
 
     tick = _result(snapshot, "symbol_info_tick")
-    tick_stamp = tick.get("time_msc")
-    try:
-        tick_time = float(tick_stamp) / 1000 if type(tick_stamp) in (int, float) else float(tick.get("time"))
-        tick_fresh=0 <= now.timestamp() - tick_time <= MAX_AGE_SECONDS
-    except (TypeError,ValueError,OverflowError):
-        tick_fresh=False
-    if not tick_fresh:
-        raise InvalidData("MT5_TICK_STALE_OR_FUTURE")
+    timing = tick_time_evidence(tick, now)
+    if timing["freshness"] != "PASS":
+        raise InvalidData(timing["code"])
     bid, ask = _number(tick, "bid", positive=True), _number(tick, "ask", positive=True)
     if ask < bid:
         raise InvalidData("MT5_QUOTE_INVALID")
@@ -126,6 +124,7 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
         "symbol_mapping_exact": True,
         "symbol": signal["mt5_symbol"],
         "tick_fresh": True,
+        "tick_time_evidence": timing,
         "trade_session_available": True,
         "volume_grid": {"minimum": str(minimum), "maximum": str(maximum), "step": str(step)},
         "price_format": {"digits": digits, "point": str(symbol["point"])},
