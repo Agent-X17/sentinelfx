@@ -11,6 +11,7 @@ from engine.domain import InvalidData, stamp, utcnow
 from engine.isolated_mt5 import SnapshotMT5
 from engine.mt5 import MT5Result
 from engine.mt5_evidence import PROTOCOL, validate_snapshot, validate_order_request
+from engine.mt5_time import server_fingerprint
 from engine.service import Application
 from engine.webhook import SymbolMapper, TradingViewWebhookService, WebhookAuthenticator
 
@@ -20,9 +21,15 @@ def ok(data): return {'ok':True,'code':'MT5_OK','message':'read only','data':dat
 
 def fixture():
     now=time.time()
+    observation={'utc_before':now,'utc_after':now,'monotonic_elapsed':0}
+    names=("terminal_info","account_info","symbol_info","symbol_info_tick","positions_get","orders_get",
+           "recent_deals","recent_orders","account_info_after")
     return {
         'protocol':PROTOCOL,'operation':'snapshot','captured_at':stamp(),
         'clock_observation':{'wall_start':now,'wall_end':now,'monotonic_elapsed':0},
+        'call_observations':{name:dict(observation) for name in names},
+        'runtime_info':{'package_version':'5.0.6180','terminal_build':5000,
+                        'server_fingerprint':server_fingerprint('DEMO-SERVER'),'symbol':'EURUSD.a'},
         'status':{'ok':True,'code':'MT5_CONNECTED','message':'connected','data':None},
         'terminal_info':ok({'connected':True,'trade_allowed':False}),
         'account_info':ok({'login':900001,'server':'DEMO-SERVER','currency':'USD','trade_mode':0,'trade_allowed':True,

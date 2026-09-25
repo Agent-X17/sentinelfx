@@ -3,6 +3,8 @@ import ast
 import copy
 import io
 import os
+import json
+import tempfile
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,7 +13,8 @@ from unittest.mock import patch
 
 from engine.domain import InvalidData
 from engine.mt5_evidence import validate_snapshot
-from engine.mt5_time import tick_time_evidence, validate_clock_observation
+from engine.mt5_time import (TIMESTAMP_POLICY_SCHEMA, tick_time_evidence,
+                             validate_clock_observation)
 from scripts import verify_mt5_readonly as verifier
 from test_mt5_evidence import fixture
 
@@ -24,6 +27,25 @@ def tick(age=1):
 
 
 class TickTimeTests(unittest.TestCase):
+    def policy(self):
+        return {
+            'schema':TIMESTAMP_POLICY_SCHEMA,'status':'INDEPENDENTLY_VERIFIED',
+            'policy_id':'reviewed-fixture','revision':1,'reviewed_by':'independent-reviewer',
+            'source_url':'https://broker.example/timestamp-contract',
+            'source_published_at':'2026-01-01T00:00:00+00:00',
+            'source_retrieved_at':'2026-09-20T00:00:00+00:00','source_sha256':'a'*64,
+            'broker_server_sha256':'b'*64,'package_version':'5.0.test','terminal_build':5000,
+            'symbol':'EURUSD','timestamp_semantics':'MT5_PYTHON_TICK_EPOCH_OFFSET_INDEPENDENTLY_CONFIRMED',
+            'dst_policy':{'status':'DOCUMENTED','timezone_name':'Broker/Published'},
+            'validity_intervals':[{'utc_start':'2026-03-29T00:00:00+00:00',
+                                   'utc_end':'2026-10-25T00:00:00+00:00',
+                                   'offset_seconds':10800,'dst_state':'DAYLIGHT'}],
+        }
+
+    def context(self):
+        return {'broker_server_sha256':'b'*64,'package_version':'5.0.test',
+                'terminal_build':5000,'symbol':'EURUSD'}
+
     def test_documented_utc_is_unchanged_and_raw_is_preserved(self):
         raw = tick()
         before = copy.deepcopy(raw)
@@ -52,6 +74,29 @@ class TickTimeTests(unittest.TestCase):
             now = NOW + timedelta(seconds=index)
             raw = tick(-10800 - index)
             self.assertEqual(tick_time_evidence(raw, now)['freshness'], 'BLOCKED')
+
+    def test_validated_offset_requires_complete_versioned_evidence(self):
+        result = tick_time_evidence(tick(-10799), NOW, self.policy(), self.context())
+        self.assertEqual(result['freshness'], 'PASS')
+        self.assertEqual(result['applied_offset_seconds'], 10800)
+        self.assertEqual(result['trusted_offset_status'], 'INDEPENDENTLY_VERIFIED_VERSIONED_POLICY')
+        incomplete = self.policy(); incomplete.pop('source_sha256')
+        result = tick_time_evidence(tick(-10799), NOW, incomplete, self.context())
+        self.assertEqual(result['freshness'], 'BLOCKED')
+        self.assertEqual(result['code'], 'MT5_TIMESTAMP_POLICY_INCOMPLETE')
+
+    def test_verified_offset_change_is_rejected(self):
+        context = self.context(); context['last_verified_offset_seconds'] = 7200
+        result = tick_time_evidence(tick(-10799), NOW, self.policy(), context)
+        self.assertEqual(result['code'], 'MT5_TIMESTAMP_OFFSET_CHANGED')
+        self.assertEqual(result['freshness'], 'BLOCKED')
+
+    def test_dst_policy_ambiguity_is_rejected(self):
+        policy = self.policy()
+        policy['validity_intervals'].append(dict(policy['validity_intervals'][0]))
+        result = tick_time_evidence(tick(-10799), NOW, policy, self.context())
+        self.assertEqual(result['code'], 'MT5_TIMESTAMP_POLICY_DST_AMBIGUOUS')
+        self.assertEqual(result['freshness'], 'BLOCKED')
 
     def test_unstable_offsets_remain_blocked(self):
         for offset in (10800, 7200, 10815, 3600):
@@ -133,6 +178,11 @@ class ClockObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(InvalidData, 'MT5_TICK_TIMESTAMP_INCONSISTENT'):
             validate_snapshot(data, {'mt5_symbol': 'EURUSD.a'}, '900001', 'DEMO-SERVER')
 
+    def test_proposal_evidence_requires_each_call_clock(self):
+        data = fixture(); data['call_observations']['symbol_info_tick']['utc_after'] += 2
+        with self.assertRaisesRegex(InvalidData, 'MT5_CALL_CLOCK_DRIFT'):
+            validate_snapshot(data, {'mt5_symbol': 'EURUSD.a'}, '900001', 'DEMO-SERVER')
+
 
 class VerifierTimeTests(unittest.TestCase):
     def run_verifier(self, snapshots, samples=1):
@@ -187,6 +237,28 @@ class VerifierTimeTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('Collection clock consistency: BLOCKED', output)
         self.assertIn('Normalized UTC tick timestamp: UNAVAILABLE', output)
+
+    def test_redacted_support_report_preserves_raw_diagnostics(self):
+        data = fixture(); raw = data['symbol_info_tick']['data']
+        raw['time'] += 10800; raw['time_msc'] += 10800000
+        output = io.StringIO()
+        env = {'SYSTEM_MODE':'SIMULATION','LIVE_EXECUTION_ENABLED':'false','MT5_DIAGNOSTIC_MODE':'real',
+               'DEMO_TRADE_PROPOSALS_ENABLED':'false','DEMO_TRADE_PROPOSAL_KILL_SWITCH':'true',
+               'DEMO_EXPECTED_ACCOUNT_LOGIN':'900001','DEMO_EXPECTED_BROKER_SERVER':'DEMO-SERVER'}
+        with tempfile.TemporaryDirectory() as folder:
+            target = str(Path(folder)/'report.json')
+            with patch.dict(os.environ,env,clear=True),patch.object(verifier,'IsolatedMT5Service') as service, \
+                 patch('sys.argv',['verify','--symbol','EURUSD.a','--time-samples','1','--report-file',target]), \
+                 redirect_stdout(output):
+                service.return_value.snapshot.return_value=data
+                self.assertEqual(verifier.main(),1)
+            report=json.loads(Path(target).read_text())
+        self.assertEqual(report['samples'][0]['raw_time_msc'],raw['time_msc'])
+        self.assertFalse(report['offset_applied'])
+        self.assertFalse(report['repeated_analysis']['trusted_for_normalization'])
+        self.assertEqual(report['result'],'BLOCKED_NO_TRADE')
+        for secret in ('900001','DEMO-SERVER'):
+            self.assertNotIn(secret,json.dumps(report))
 
     def test_no_submission_call_added_to_production(self):
         root = Path(__file__).resolve().parent.parent

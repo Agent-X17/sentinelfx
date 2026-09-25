@@ -97,8 +97,12 @@ The real values are not part of the PowerShell command history. They still exist
 In MT5 Market Watch, find the exact broker symbol, including any suffix such as `.a`. Replace only the placeholder below:
 
 ```powershell
-.\.venv\Scripts\python.exe -B scripts\verify_mt5_readonly.py --symbol "<YOUR_EXACT_MT5_SYMBOL>"
+.\.venv\Scripts\python.exe -B scripts\verify_mt5_readonly.py --symbol "<YOUR_EXACT_MT5_SYMBOL>" --time-samples 3 --report-file "$HOME\Desktop\sentinelfx-mt5-time-report.json"
 ```
+
+This captures Windows UTC immediately before and after every MT5 read. It prints the raw tick fields, package version, terminal build, exact symbol, a redacted server fingerprint, tick progression, and the apparent-difference spread. It does not infer or apply an offset. The report excludes the login, server name, password, webhook secret and terminal path.
+
+For the current unexplained future-timestamp case, the expected safe result is `BLOCKED / NO_TRADE`, `UNAVAILABLE_NO_INDEPENDENT_BROKER_EVIDENCE`, and `Offset use: NONE`. A stable-looking result is diagnostic evidence only. Send the redacted report to broker or MetaQuotes support if requested; do not send screenshots containing the private setup prompts.
 
 The safe result is:
 

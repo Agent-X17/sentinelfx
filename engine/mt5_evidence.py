@@ -2,7 +2,9 @@
 from decimal import Decimal
 
 from .domain import InvalidData, date, decimal, utcnow
-from .mt5_time import MAX_TICK_AGE_SECONDS, tick_time_evidence, validate_clock_observation
+from .mt5_time import (MAX_TICK_AGE_SECONDS, server_fingerprint,
+                       tick_time_evidence, validate_call_observation,
+                       validate_clock_observation)
 
 
 PROTOCOL = "sentinelfx.mt5.readonly-evidence.v1"
@@ -49,6 +51,14 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
         raise InvalidData((status or {}).get("code", "MT5_EVIDENCE_STATUS_MISSING"))
 
     validate_clock_observation(snapshot.get("clock_observation"), now, date(snapshot["captured_at"]))
+    calls = snapshot.get("call_observations")
+    required_calls = ("terminal_info", "account_info", "symbol_info", "symbol_info_tick",
+                      "positions_get", "orders_get", "recent_deals", "recent_orders",
+                      "account_info_after")
+    if not isinstance(calls, dict):
+        raise InvalidData("MT5_CALL_CLOCK_EVIDENCE_MISSING")
+    for name in required_calls:
+        validate_call_observation(calls.get(name))
 
     terminal = _result(snapshot, "terminal_info")
     if terminal.get("connected") is not True:
@@ -66,6 +76,16 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
         raise InvalidData("MT5_ACCOUNT_IDENTITY_UNVERIFIED")
     if str(login) != str(expected_login) or server != expected_server:
         raise InvalidData("MT5_ACCOUNT_MISMATCH")
+    runtime = snapshot.get("runtime_info")
+    if not isinstance(runtime, dict):
+        raise InvalidData("MT5_RUNTIME_EVIDENCE_MISSING")
+    if (runtime.get("server_fingerprint") != server_fingerprint(server)
+            or runtime.get("symbol") != signal.get("mt5_symbol")
+            or not isinstance(runtime.get("package_version"), str)
+            or not runtime["package_version"]
+            or type(runtime.get("terminal_build")) is not int
+            or runtime["terminal_build"] <= 0):
+        raise InvalidData("MT5_RUNTIME_EVIDENCE_INVALID")
     if account.get("trade_mode") != 0:
         raise InvalidData("MT5_ACCOUNT_NOT_CONFIRMED_DEMO")
     if account.get("currency") != "USD":
@@ -96,7 +116,9 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
         raise InvalidData("MT5_SYMBOL_PROPERTIES_INVALID")
 
     tick = _result(snapshot, "symbol_info_tick")
-    timing = tick_time_evidence(tick, now)
+    # No timestamp policy is loaded here. The observed terminal value must honor
+    # MetaQuotes' published UTC contract or proposal evidence remains blocked.
+    timing = tick_time_evidence(tick, now, call_observation=calls["symbol_info_tick"])
     if timing["freshness"] != "PASS":
         raise InvalidData(timing["code"])
     bid, ask = _number(tick, "bid", positive=True), _number(tick, "ask", positive=True)

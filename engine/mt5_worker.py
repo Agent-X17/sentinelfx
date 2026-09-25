@@ -6,27 +6,54 @@ from datetime import datetime, timedelta, timezone
 from .mt5 import MT5Service
 from .domain import stamp
 from .mt5_evidence import PROTOCOL
+from .mt5_time import server_fingerprint
+
+
+def _timed(results, name, function, *args):
+    """Capture Windows UTC immediately around one read-only adapter call."""
+    before, monotonic = time.time(), time.monotonic()
+    value = function(*args)
+    after = time.time()
+    results.setdefault('call_observations', {})[name] = {
+        'utc_before': before,
+        'utc_after': after,
+        'monotonic_elapsed': time.monotonic() - monotonic,
+    }
+    return value
 
 
 def collect(adapter, symbol=None):
     wall_start, monotonic_start = time.time(), time.monotonic()
-    results = {'protocol':PROTOCOL,'operation':'snapshot','status': adapter.status().to_dict()}
+    results = {'protocol':PROTOCOL,'operation':'snapshot','call_observations':{}}
+    results['status'] = _timed(results, 'status_initial', adapter.status).to_dict()
     if not results['status']['ok'] or symbol is None:
+        wall_end = time.time()
+        results['clock_observation'] = {'wall_start':wall_start,'wall_end':wall_end,
+            'monotonic_elapsed':time.monotonic()-monotonic_start}
+        results['captured_at'] = datetime.fromtimestamp(wall_end, timezone.utc).isoformat()
         return results
     for name, args in [('terminal_info',()),('account_info',()),('symbol_info',(symbol,)),
                        ('symbol_info_tick',(symbol,)),('positions_get',()),('orders_get',())]:
-        results[name] = getattr(adapter,name)(*args).to_dict()
+        results[name] = _timed(results, name, getattr(adapter,name), *args).to_dict()
     now=datetime.now(timezone.utc); since=now-timedelta(hours=24)
-    results['recent_deals']=adapter.history_deals_get(since,now).to_dict()
-    results['recent_orders']=adapter.history_orders_get(since,now).to_dict()
+    results['recent_deals']=_timed(results,'recent_deals',adapter.history_deals_get,since,now).to_dict()
+    results['recent_orders']=_timed(results,'recent_orders',adapter.history_orders_get,since,now).to_dict()
     # Detect identity changes during this diagnostic sequence.
-    after = adapter.account_info()
+    after = _timed(results, 'account_info_after', adapter.account_info)
     first = results['account_info'].get('data') or {}
     last = after.data or {}
     if not after.ok or any(first.get(k) != last.get(k) for k in ('login','server','currency')):
         results['status'] = {'ok':False,'code':'MT5_ACCOUNT_CHANGED','message':'Account identity changed during diagnostics','data':None}
-    elif not adapter.status().ok:
+    elif not _timed(results, 'status_final', adapter.status).ok:
         results['status'] = {'ok':False,'code':'MT5_DISCONNECTED','message':'Terminal disconnected during diagnostics','data':None}
+    terminal = (results.get('terminal_info') or {}).get('data') or {}
+    module = getattr(adapter, '_module', None)
+    results['runtime_info'] = {
+        'package_version': str(getattr(module, '__version__', '')),
+        'terminal_build': terminal.get('build') if type(terminal.get('build')) is int else None,
+        'server_fingerprint': server_fingerprint(first.get('server')),
+        'symbol': symbol,
+    }
     wall_end = time.time()
     results['clock_observation'] = {
         'wall_start': wall_start, 'wall_end': wall_end,

@@ -15,6 +15,14 @@ Primary documentation:
 - [MqlTick fields](https://www.mql5.com/en/docs/constants/structures/mqltick) describes `time` as the last price update time and `time_msc` as that time in milliseconds.
 - [TimeGMT](https://www.mql5.com/en/docs/dateandtime/timegmt) is calculated using the computer's time and timezone. It is not an independent authenticated UTC source.
 
+### Dated broker research (retrieved 2026-09-25)
+
+HFM's official [Trading Hours](https://www.hfm.com/int/en/trading-instruments/trading-hours) page says its MetaTrader **server time** is GMT+2 in winter and GMT+3 in summer. It says DST begins on the last Sunday of March and ends on the last Sunday of October; its September 2026 schedule is labelled GMT+3.
+
+That source documents the broker's displayed server clock and trading schedule. It does **not** state that `MetaTrader5.symbol_info_tick().time` or `time_msc` departs from MetaQuotes' UTC contract. It is not bound to the privately configured account server, terminal build, Python package version, exact tick or symbol. SentinelFX therefore records it as context only and does not use it to normalize a timestamp. Local Windows timezone is irrelevant to this broker policy.
+
+The remaining evidence gap requires a dated statement from the broker and/or MetaQuotes that explicitly explains the Python tick epoch for the exact server/runtime, plus a same-tick independent UTC reference. Until that exists, an apparent stable GMT+3 difference remains unverified and blocked.
+
 No broker/runtime-specific authoritative exception to the UTC contract, independently authenticated broker offset, or matching independently timestamped tick is available in this task. A chart clock, `TimeCurrent`, another tick from the same terminal, a stable difference from the PC clock, or an operator-entered offset cannot supply that missing trust.
 
 ## Implemented correction
@@ -27,13 +35,15 @@ The safe correction is stricter interpretation and diagnostics, **not** automati
 4. Preserve the exact `0 <= age <= 30 seconds` rule, including rejection of future timestamps by even one millisecond.
 5. The worker records wall-clock start/end and monotonic elapsed time. Reject backward clock steps, elapsed discrepancies greater than 250 ms, inconsistent capture time, missing evidence, and snapshots outside 30 seconds. This validates elapsed-time consistency only; it does not prove absolute UTC accuracy or authorize an offset.
 6. The verifier prints only allowlisted numeric raw timestamps, UTC candidate, normalized UTC when valid, clock consistency, trusted-offset availability and freshness. It does not print the account identity, terminal path or entire native snapshot.
-7. `--time-samples 3` obtains three bounded snapshots one second apart. Every snapshot must pass. A later pass cannot erase an earlier failure. It cannot be combined with `--order-check` and never learns an offset.
+7. Every native read is surrounded by Windows UTC-before, UTC-after and monotonic elapsed captures. The report includes the MT5 Python package version, terminal build, exact symbol and a SHA-256 server fingerprint; it never includes the server name, login or terminal path.
+8. `--time-samples 3` obtains three bounded snapshots one second apart. It checks `time_msc / 1000` against `time`, nondecreasing tick progression, every raw tick against its own call interval, and the spread of the apparent difference. A stable result is labelled `STABLE_DIAGNOSTIC_ONLY_UNTRUSTED`; it is never applied.
+9. `--report-file` writes only allowlisted, redacted fields in a reproducible JSON support report. It records the raw values separately from normalized UTC and explicitly states that no offset was applied and no order was sent.
 
 The production snapshot validator uses the same timestamp evaluator. The worker and validator must be updated together: older envelopes lacking `clock_observation` fail closed. No database migration, HTTP route, offset environment variable, external time network request, or execution feature was added.
 
-## Requested nonzero-offset acceptance: not implemented
+## Nonzero-offset status: structurally testable, unavailable in production
 
-There is no trustworthy nonzero-offset source to validate. Adding a test that labels a made-up offset as trusted would not establish one. Stable nonzero offsets are therefore explicitly tested to remain blocked. The requested acceptance of a stable independently verified broker offset is still outstanding.
+There is no trustworthy nonzero-offset source for the current account/runtime. Stable nonzero offsets are explicitly tested to remain blocked. A synthetic unit test proves that the offline validator accepts a correction only when every required, versioned evidence binding is present. That fixture does not establish a real broker policy, and the production snapshot path deliberately supplies no policy. The current Windows result therefore remains blocked.
 
 A future implementation requires an independently authenticated source that binds timestamp semantics/offset to the exact broker feed, symbol, terminal/package runtime and validity interval, with explicit UTC uncertainty. Ideally it supplies the UTC timestamp for the **same identifiable tick**, not a similar price from another feed. Source authenticity, expiry, replay protection and identity binding must be validated outside webhook input. Offset stability alone is insufficient. Any offset or clock change must latch a block pending re-verification. Both tick freshness and recent exposure history query semantics must be verified; correcting only tick time while querying order/deal history on the wrong time basis is unsafe.
 
@@ -53,10 +63,12 @@ SYSTEM_MODE=SIMULATION
 Keep MT5 Algo Trading off and use the exact Market Watch symbol. Run:
 
 ```powershell
-.\.venv\Scripts\python.exe -B scripts\verify_mt5_readonly.py --symbol "EURUSD" --time-samples 3
+.\.venv\Scripts\python.exe -B scripts\verify_mt5_readonly.py --symbol "EURUSD" --time-samples 3 --report-file "$HOME\Desktop\sentinelfx-mt5-time-report.json"
 ```
 
-If the quote is still in the future, expect a raw timestamp and UTC candidate, `Trusted offset status: UNAVAILABLE_NO_INDEPENDENT_BROKER_EVIDENCE`, normalized timestamp unavailable, and `BLOCKED / NO_TRADE`. Save only the time diagnostic/result lines. Do not include earlier private prompts, account/login, server, terminal path, passwords or secrets. Do not run order-check after a blocked result.
+If the quote is still in the future, expect raw timestamps, per-call UTC bounds, runtime/build fields, `Trusted offset status: UNAVAILABLE_NO_INDEPENDENT_BROKER_EVIDENCE`, normalized timestamp unavailable, and `BLOCKED / NO_TRADE`. The JSON file is suitable for broker/MetaQuotes support because it preserves the reproducible timing evidence without the account login, server name, terminal path, password or secret. Do not run order-check after a blocked result.
+
+The code contains a test-only/offline boundary for a future independently verified, versioned policy. It requires an HTTPS source and digest, reviewer, publication/retrieval dates, exact hashed server identity, package version, terminal build, exact symbol, documented DST state and a single unambiguous UTC validity interval. Missing bindings, DST overlap/gap, or a changed offset all block. No production configuration, webhook, database field or HTTP route can supply such a policy today.
 
 A PASS means only the current documented-UTC read-only evidence checks passed. It is not execution readiness and does not resolve a previously unexplained broker timestamp anomaly by itself.
 
@@ -85,12 +97,12 @@ PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B -m unittest discover -s t
 ```
 
 ```text
-Ran 226 tests in 5.014s
+Ran 231 tests in 5.610s
 
 OK
 ```
 
-There are 25 new tests (201 previous tests plus 25). No stable **nonzero** offset acceptance test is claimed: independently trusted offset evidence remains unavailable, so that case correctly remains rejected.
+The five tests added in this change cover complete versioned-policy validation, changed-offset rejection, DST ambiguity, per-call host-clock inconsistency, and redacted support-report output. The real observed nonzero offset remains untrusted and rejected.
 
 ```sh
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
@@ -103,7 +115,7 @@ PASS  live-enabled startup refusal — exit 1; Live execution is not implemented
 PASS  LIVE_GATED startup refusal — exit 1; LIVE_GATED is reserved
 PASS  live execution impossible — both startup modes refuse, order_send refuses, /api/execute is 404
 PASS  final frontend syntax — JavaScript syntax valid
-PASS  final test suite — Ran 226 tests in 5.107s; OK
+PASS  final test suite — Ran 231 tests in 5.170s; OK
 
 ACCEPTANCE RESULT: PASS
 ```
@@ -115,4 +127,4 @@ git diff --check
 git diff --exit-code -- engine/config.py .env.example server.py engine/mt5.py
 ```
 
-All four commands exited 0 with no output. The final command confirms unchanged safety defaults, routes and the existing submission-refusal method. The acceptance gate calls that refusal method only; no native submission call occurs. Changes are local and have not been committed or pushed by this task.
+All four commands exited 0 with no output. The final command confirms unchanged safety defaults, routes and the existing submission-refusal method. The acceptance gate calls that refusal method only; no native submission call occurs.

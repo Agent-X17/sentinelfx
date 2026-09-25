@@ -48,8 +48,8 @@ Persisted and displayed evidence omits the login and broker server. Credential-l
 4. Start SentinelFX and inspect `/status` and `/api/health`. Confirm real diagnostic mode, no drift latch, and a fresh successful snapshot. Any failure must remain `NO_TRADE`.
 5. Verify failure cases before enabling proposals: disconnect the terminal, switch account, enable Algo Trading, allow the tick to go stale, use an unmapped symbol, create a manual pending order, and create/close a manual demo position. Each case must block and leave zero proposals.
 6. Return to the expected demo account, remove all exposure, keep Algo Trading off, restart the terminal/server as needed, and re-run the acceptance gate.
-7. Only for a controlled localhost proposal test, set `DEMO_TRADE_PROPOSALS_ENABLED=true` and `DEMO_TRADE_PROPOSAL_KILL_SWITCH=false`, send one fresh authenticated alert, and inspect `http://127.0.0.1:8765/#proposals`.
-8. Confirm the proposal states **DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.** Clicking Approve changes only the audited status to `APPROVED_FOR_FUTURE_DEMO_EXECUTION`.
+7. Keep proposal creation disabled and the kill switch active throughout this verification phase. Do not send a proposal-creating alert.
+8. Confirm the dashboard states **DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.**
 
 This procedure verifies proposal evidence. It does not approve or test execution.
 
@@ -58,3 +58,7 @@ This procedure verifies proposal evidence. It does not approve or test execution
 The snapshot now requires `clock_observation` containing numeric `wall_start`, `wall_end` (host epoch seconds) and `monotonic_elapsed` (seconds). Missing measurements, backward wall time, wall/monotonic disagreement over 250 ms, inconsistent capture time, or expired observations block. This is elapsed-clock validation, not an independent UTC authority.
 
 Native `time` and `time_msc` must be positive integers agreeing at whole-second precision. UTC epoch conversion uses no local timezone adjustment. The unchanged 30-second age gate rejects future values. No supplied offset or normalized timestamp is accepted from a snapshot/webhook. See [the timestamp investigation](MT5_TIMESTAMP_INVESTIGATION.md) for the unresolved broker/runtime discrepancy and the independent evidence required before any nonzero normalization.
+
+Every native read now has its own `utc_before`, `utc_after`, and `monotonic_elapsed` observation. The snapshot also carries an allowlisted runtime record: Python package version, terminal build, exact symbol, and a SHA-256 fingerprint of the broker server. The raw server name and login are excluded from support output. These fields make the anomaly reproducible without treating the host clock as proof of broker semantics.
+
+Repeated diagnostics report tick progression and apparent-difference stability. Even a perfectly stable three-hour difference is labelled diagnostic-only and remains `NO_TRADE`. HFM's dated server-clock/DST page is recorded as context, but it does not define the Python tick epoch and cannot authorize correction. A versioned policy can pass the offline validator only with exact runtime bindings, independent review, source digest, explicit Python timestamp semantics, and one unambiguous documented DST interval. There is no production loader for such a policy.
