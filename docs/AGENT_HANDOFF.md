@@ -1,5 +1,12 @@
 # Independent agent handoff
 
+Current Windows blocker diagnostics: [HFM external-clock diagnostics](HFM_CLOCK_SOURCE_DIAGNOSTICS.md)
+adds redacted, CLI-only classification for the two fixed NTP and two fixed
+HTTPS sources. It does not change normalization, freshness, proposals, the
+kill switch, execution, Windows, or MT5. Real Windows results are still needed.
+The complete repository suite currently passes: `280 tests`; the acceptance
+gate also passes.
+
 Implementation update: [HFM read-only normalization](HFM_READONLY_NORMALIZATION.md)
 adds an explicit CLI-only policy and measurements after the operator requested
 implementation. Default application/proposal timestamp evaluation is unchanged.
@@ -64,7 +71,8 @@ Run the acceptance gate first:
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
 ```
 
-The current verified result after Phase 2 read-only evidence coverage is `201 tests` and `ACCEPTANCE RESULT: PASS`.
+The current verified result after clock-source diagnostic coverage is `280 tests`
+and `ACCEPTANCE RESULT: PASS`.
 
 ```sh
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -m unittest discover -s tests -v

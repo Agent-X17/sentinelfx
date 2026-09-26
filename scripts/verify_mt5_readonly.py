@@ -119,12 +119,14 @@ def summarize_samples(samples):
 
 def main():
     parser=argparse.ArgumentParser(description="Verify redacted read-only MT5 demo evidence")
-    parser.add_argument("--symbol",required=True,help="Exact MT5 Market Watch symbol")
+    parser.add_argument("--symbol",help="Exact MT5 Market Watch symbol")
     parser.add_argument("--order-check",action="store_true",help="Also run one non-submitting minimum-volume order_check")
     parser.add_argument("--time-samples", type=int, choices=range(1, 6), default=1,
                         help="Collect 1–5 read-only snapshots; no offset is learned")
     parser.add_argument("--report-file", help="Write a redacted JSON support report")
     parser.add_argument("--hfm-policy", help="Explicit local HFM read-only identity/version policy JSON")
+    parser.add_argument("--clock-diagnostics", action="store_true",
+                        help="Only diagnose fixed external UTC sources; do not connect to MT5")
     args=parser.parse_args()
     if args.time_samples != 1 and args.order_check:
         parser.error("--time-samples cannot be combined with --order-check")
@@ -135,6 +137,13 @@ def main():
             return blocked("SAFE_DEFAULTS_NOT_ACTIVE")
         if settings.live_execution_enabled or settings.mode!="SIMULATION" or settings.mt5_diagnostic_mode!="real":
             return blocked("READ_ONLY_MODE_NOT_CONFIGURED")
+        if args.clock_diagnostics:
+            if args.symbol or args.hfm_policy or args.order_check or args.time_samples != 1:
+                return blocked("CLOCK_DIAGNOSTIC_ARGUMENTS_INVALID")
+            from scripts.diagnose_hfm_clock import run
+            return run(args.report_file)
+        if not args.symbol:
+            return blocked("SYMBOL_REQUIRED")
         if not settings.demo_expected_account_login or not settings.demo_expected_broker_server:
             return blocked("EXPECTED_DEMO_IDENTITY_NOT_CONFIGURED")
         if args.hfm_policy:

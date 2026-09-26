@@ -105,6 +105,10 @@ In MT5 Market Watch, find the exact broker symbol, including any suffix such as 
 .\.venv\Scripts\python.exe -B scripts\verify_mt5_readonly.py --symbol "<YOUR_EXACT_MT5_SYMBOL>" --time-samples 3 --report-file "$HOME\Desktop\sentinelfx-mt5-time-report.json"
 ```
 
+If the result is `HFM_CLOCK_SOURCE_UNAVAILABLE`, use the redacted local commands
+in [HFM external-clock diagnostics](HFM_CLOCK_SOURCE_DIAGNOSTICS.md). They only
+classify connectivity failures and never change Windows, MT5, or safety policy.
+
 This captures Windows UTC immediately before and after every MT5 read. It prints the raw tick fields, package version, terminal build, exact symbol, a redacted server fingerprint, tick progression, and the apparent-difference spread. It does not infer or apply an offset. The report excludes the login, server name, password, webhook secret and terminal path.
 
 For the current unexplained future-timestamp case, the expected safe result is `BLOCKED / NO_TRADE`, `UNAVAILABLE_NO_INDEPENDENT_BROKER_EVIDENCE`, and `Offset use: NONE`. A stable-looking result is diagnostic evidence only. Send the redacted report to broker or MetaQuotes support if requested; do not send screenshots containing the private setup prompts.
