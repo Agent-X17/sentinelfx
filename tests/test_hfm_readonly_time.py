@@ -12,7 +12,7 @@ from unittest.mock import patch, Mock
 from engine.domain import InvalidData
 from engine.hfm_readonly_time import evaluate, seasonal_offset, SCHEMA, POLICY_REVISION
 from engine.mt5_time import server_fingerprint
-from engine.readonly_clock import decode, EPOCH
+from engine.readonly_clock import decode, decode_https_date, measure, EPOCH
 from engine.mt5 import MT5Service, MT5Result
 from engine.mt5_worker import collect
 from scripts import hfm_readonly
@@ -106,7 +106,7 @@ class HFMTimeTests(unittest.TestCase):
         with self.assertRaisesRegex(InvalidData, 'HOST_CLOCK_DRIFT'): self.check(values)
 
     def test_clock_missing_stale_uncertain_and_unbracketed(self):
-        for change in ({'status': 'UNKNOWN'}, {'uncertainty_seconds': 1},
+        for change in ({'status': 'UNKNOWN'}, {'uncertainty_seconds': 2.1},
                        {'utc': self.now.timestamp()-40}, {'utc': self.now.timestamp()}):
             values = batch(self.now); values[2][0].update(change)
             with self.assertRaises(InvalidData): self.check(values)
@@ -223,3 +223,21 @@ class ClockPacketTests(unittest.TestCase):
             with self.assertRaises(InvalidData): decode(*args)
         args = list(self.packet()); args[-1] = .4
         with self.assertRaises(InvalidData): decode(*args)
+
+    def test_https_date_bounds_and_invalid_header(self):
+        offset, error = decode_https_date('Sat, 26 Sep 2026 12:00:00 GMT',
+            1790423999.8, 1790424000.2, .4)
+        self.assertAlmostEqual(offset, .5, places=6)
+        self.assertAlmostEqual(error, .7, places=6)
+        with self.assertRaisesRegex(InvalidData, 'CLOCK_RESPONSE_INVALID'):
+            decode_https_date('not a date', 1, 1.1, .1)
+
+    def test_udp_unavailable_uses_https_but_other_ntp_failures_do_not(self):
+        expected = {'status': 'MEASURED'}
+        with patch('engine.readonly_clock._measure_ntp', side_effect=InvalidData('HFM_CLOCK_SOURCE_UNAVAILABLE')), \
+             patch('engine.readonly_clock._measure_https', return_value=expected) as fallback:
+            self.assertIs(measure(), expected); fallback.assert_called_once()
+        with patch('engine.readonly_clock._measure_ntp', side_effect=InvalidData('HFM_CLOCK_SOURCES_DISAGREE')), \
+             patch('engine.readonly_clock._measure_https') as fallback:
+            with self.assertRaisesRegex(InvalidData, 'SOURCES_DISAGREE'): measure()
+            fallback.assert_not_called()

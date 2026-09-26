@@ -37,12 +37,18 @@ values. A 30-second query window and 10,000-row cap bound evidence; incomplete
 or ambiguous matches block. Collection workers retain their five-second timeout.
 
 Before and after collection, two readings each from time.windows.com and
-time.cloudflare.com check the Windows clock. UDP port 123 must be available.
-Both services must agree within 250 ms, with bounded network delay and combined
-clock error no more than 500 ms. Each clock process has a ten-second deadline.
-These NTP sources are **not cryptographically authenticated**; the threat model
-assumes a trusted local machine/network. No system clock is adjusted. Unavailable
-sources, clock steps, stale evidence or uncertainty cause NO_TRADE.
+time.cloudflare.com check the Windows clock. If the network blocks UDP port 123,
+the verifier uses TLS-authenticated HTTPS Date responses from Cloudflare and
+Microsoft instead. It never falls back after malformed or disagreeing NTP data.
+NTP services must agree within 250 ms with combined clock error no more than
+500 ms. HTTPS services must agree within one second with conservative whole-second
+and network uncertainty no more than two seconds. The full uncertainty interval
+is used by freshness validation, so this fallback does not add age tolerance.
+Each clock process has a ten-second deadline. NTP is not authenticated; HTTPS
+authenticates the named web services through the normal TLS trust store. The
+threat model assumes a trusted local machine, CA store and network. No system
+clock is adjusted. Unavailable sources, redirects to other hosts, clock steps,
+stale evidence or uncertainty cause NO_TRADE.
 
 Raw time/time_msc are preserved. Reports separately show expected offset, measured
 raw-minus-host difference, an unverified UTC candidate, verified normalized UTC,
@@ -134,11 +140,11 @@ No native MT5 connection or public NTP query was made during these tests.
 
 ```text
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B -m unittest discover -s tests -v
-Ran 253 tests in 4.977s
+Ran 255 tests in 5.223s
 OK
 
 PYTHONPYCACHEPREFIX=/tmp/sentinelfx-pycache python3 -B scripts/acceptance_check.py
-PASS  final test suite — Ran 253 tests in 5.191s; OK
+PASS  final test suite — Ran 255 tests in 5.177s; OK
 ACCEPTANCE RESULT: PASS
 
 node --check static/app.js

@@ -79,10 +79,16 @@ def evaluate(samples, policy, clock_checks, now, expected_login, expected_server
         if not isinstance(check, dict) or check.get('status') != 'MEASURED':
             reject('CLOCK_UNCERTAIN')
         value = check.get('uncertainty_seconds')
-        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= .5:
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 2:
             reject('CLOCK_UNCERTAIN')
         uncertainty = max(uncertainty, value)
-        if check.get('sources') != ['time.windows.com', 'time.cloudflare.com']:
+        allowed_sources = (['time.windows.com', 'time.cloudflare.com'],
+                           ['www.cloudflare.com', 'www.microsoft.com'])
+        if check.get('sources') not in allowed_sources:
+            reject('CLOCK_SOURCE_MISMATCH')
+        expected_auth = ('UNAUTHENTICATED_NTP_TWO_SOURCES' if check['sources'] == allowed_sources[0]
+                         else 'TLS_HTTPS_DATE_TWO_SOURCES')
+        if check.get('authentication') not in (None, expected_auth):
             reject('CLOCK_SOURCE_MISMATCH')
         stamp = check.get('utc')
         if type(stamp) not in (int, float) or not math.isfinite(stamp) or not 0 <= now.timestamp() - stamp <= 30:

@@ -114,7 +114,7 @@ def run(args, settings):
         print('Seasonal offset seconds:', row.get('expected_offset_seconds', 'UNAVAILABLE'))
         print('Measured raw-minus-host seconds:', row.get('measured_raw_minus_host_seconds', 'UNAVAILABLE'))
         print('Normalized UTC:', row.get('normalized_utc') or 'UNAVAILABLE')
-        print('UTC candidate (not verified on a blocked run):', row.get('normalized_utc_candidate', 'UNAVAILABLE'))
+        print('UTC normalization candidate:', row.get('normalized_utc_candidate', 'UNAVAILABLE'))
         print('Age seconds:', row.get('age_seconds', 'UNAVAILABLE'))
         print('Freshness (30-second limit):', row['freshness'])
     passed = report['result'] == 'PASS_READ_ONLY_ONLY'
