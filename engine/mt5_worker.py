@@ -2,6 +2,7 @@
 import json
 import sys
 import time
+import platform
 from datetime import datetime, timedelta, timezone
 from .mt5 import MT5Service
 from .domain import stamp
@@ -22,7 +23,7 @@ def _timed(results, name, function, *args):
     return value
 
 
-def collect(adapter, symbol=None):
+def collect(adapter, symbol=None, timestamp_reads=False):
     wall_start, monotonic_start = time.time(), time.monotonic()
     results = {'protocol':PROTOCOL,'operation':'snapshot','call_observations':{}}
     results['status'] = _timed(results, 'status_initial', adapter.status).to_dict()
@@ -38,6 +39,24 @@ def collect(adapter, symbol=None):
     now=datetime.now(timezone.utc); since=now-timedelta(hours=24)
     results['recent_deals']=_timed(results,'recent_deals',adapter.history_deals_get,since,now).to_dict()
     results['recent_orders']=_timed(results,'recent_orders',adapter.history_orders_get,since,now).to_dict()
+    if timestamp_reads:
+        tick = (results.get('symbol_info_tick') or {}).get('data') or {}
+        module = adapter._module
+        # Query parameters use actual UTC, never broker-shifted or naive values.
+        start, end = now - timedelta(seconds=30), now
+        results['tick_crosscheck'] = {}
+        for method, arguments in (
+                ('copy_ticks_from', (symbol, start, 10000, module.COPY_TICKS_ALL)),
+                ('copy_ticks_range', (symbol, start, end, module.COPY_TICKS_ALL))):
+            values = _timed(results, method, getattr(module, method), *arguments)
+            keys = ('time', 'time_msc', 'bid', 'ask', 'last', 'volume', 'flags', 'volume_real')
+            matches = 0
+            if values is not None and len(values) <= 10000:
+                for row in values:
+                    if all(key in tick and row[key] == tick[key] for key in keys):
+                        matches += 1
+            results['tick_crosscheck'][method] = {
+                'matched': matches == 1, 'utc_from': start.isoformat(), 'utc_to': end.isoformat()}
     # Detect identity changes during this diagnostic sequence.
     after = _timed(results, 'account_info_after', adapter.account_info)
     first = results['account_info'].get('data') or {}
@@ -50,6 +69,7 @@ def collect(adapter, symbol=None):
     module = getattr(adapter, '_module', None)
     results['runtime_info'] = {
         'package_version': str(getattr(module, '__version__', '')),
+        'python_version': platform.python_version(),
         'terminal_build': terminal.get('build') if type(terminal.get('build')) is int else None,
         'server_fingerprint': server_fingerprint(first.get('server')),
         'symbol': symbol,
@@ -99,7 +119,7 @@ if __name__ == '__main__':
         if not initial.ok:
             result={'protocol':PROTOCOL,'operation':request.get('operation','snapshot'),'status':initial.to_dict()}
         elif request.get('operation','snapshot')=='snapshot':
-            result=collect(adapter,request.get('symbol'))
+            result=collect(adapter,request.get('symbol'), request.get('timestamp_reads') is True)
         elif request.get('operation')=='order_check':
             result=check(adapter,request.get('request'))
         else:

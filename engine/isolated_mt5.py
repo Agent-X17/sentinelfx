@@ -66,7 +66,7 @@ class IsolatedMT5Service(MT5Service):
             raise ValueError('Invalid worker output')
         return data
 
-    def snapshot(self,symbol=None):
+    def snapshot(self,symbol=None, timestamp_reads=False):
         def failure(code,message):
             return self._remember({'status':MT5Result(False,code,message).to_dict()})
         if not self.enabled:
@@ -76,7 +76,7 @@ class IsolatedMT5Service(MT5Service):
         try:
             if self._drift:
                 return failure('MT5_ACCOUNT_CHANGED','Account identity drift is latched; review and restart required')
-            data=self._worker({'operation':'snapshot','symbol':symbol})
+            data=self._worker({'operation':'snapshot','symbol':symbol, 'timestamp_reads':timestamp_reads})
             account=(data.get('account_info') or {}).get('data') or {}
             identity=(account.get('login'),account.get('server'),account.get('currency'))
             if data['status'].get('code') == 'MT5_ACCOUNT_CHANGED' or (

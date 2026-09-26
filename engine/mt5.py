@@ -1,6 +1,7 @@
 """MetaTrader 5 boundary. Real order submission is deliberately unavailable."""
 from dataclasses import dataclass, asdict
 from typing import Any, Optional
+from datetime import datetime, timezone
 
 
 @dataclass(frozen=True)
@@ -113,9 +114,16 @@ class MT5Service:
     def symbol_info_tick(self, symbol): return self._call("symbol_info_tick", symbol)
     def positions_get(self, **kwargs): return self._call("positions_get", **kwargs)
     def orders_get(self, **kwargs): return self._call("orders_get", **kwargs)
-    def history_deals_get(self, date_from, date_to, **kwargs): return self._call("history_deals_get", date_from, date_to, **kwargs)
-    def history_orders_get(self, date_from, date_to, **kwargs): return self._call("history_orders_get", date_from, date_to, **kwargs)
-    def copy_rates_range(self, symbol, timeframe, date_from, date_to): return self._call("copy_rates_range", symbol, timeframe, date_from, date_to)
+    def _dated_call(self, name, prefix, date_from, date_to, **kwargs):
+        if any(not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None
+               for value in (date_from, date_to)):
+            return MT5Result(False, 'MT5_UTC_PARAMETERS_REQUIRED', 'UTC-aware date parameters required')
+        return self._call(name, *prefix, date_from.astimezone(timezone.utc),
+                          date_to.astimezone(timezone.utc), **kwargs)
+
+    def history_deals_get(self, date_from, date_to, **kwargs): return self._dated_call("history_deals_get", (), date_from, date_to, **kwargs)
+    def history_orders_get(self, date_from, date_to, **kwargs): return self._dated_call("history_orders_get", (), date_from, date_to, **kwargs)
+    def copy_rates_range(self, symbol, timeframe, date_from, date_to): return self._dated_call("copy_rates_range", (symbol, timeframe), date_from, date_to)
     def order_calc_margin(self, action, symbol, volume, price): return self._call("order_calc_margin", action, symbol, volume, price)
     def order_calc_profit(self, action, symbol, volume, price_open, price_close): return self._call("order_calc_profit", action, symbol, volume, price_open, price_close)
     def order_check(self, request):

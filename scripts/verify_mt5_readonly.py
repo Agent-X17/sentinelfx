@@ -124,6 +124,7 @@ def main():
     parser.add_argument("--time-samples", type=int, choices=range(1, 6), default=1,
                         help="Collect 1–5 read-only snapshots; no offset is learned")
     parser.add_argument("--report-file", help="Write a redacted JSON support report")
+    parser.add_argument("--hfm-policy", help="Explicit local HFM read-only identity/version policy JSON")
     args=parser.parse_args()
     if args.time_samples != 1 and args.order_check:
         parser.error("--time-samples cannot be combined with --order-check")
@@ -136,6 +137,9 @@ def main():
             return blocked("READ_ONLY_MODE_NOT_CONFIGURED")
         if not settings.demo_expected_account_login or not settings.demo_expected_broker_server:
             return blocked("EXPECTED_DEMO_IDENTITY_NOT_CONFIGURED")
+        if args.hfm_policy:
+            from scripts.hfm_readonly import run
+            return run(args, settings)
         service=IsolatedMT5Service(True,settings.mt5_terminal_path)
         first_failure = None
         diagnostic_samples = []

@@ -1,5 +1,10 @@
 # Windows MT5 demo verification guide
 
+For the explicitly scoped HFM seasonal timestamp diagnostic, follow
+[HFM read-only normalization](HFM_READONLY_NORMALIZATION.md). It requires a
+local identity/version policy and fresh measurements; it never enables proposals.
+The original unconfigured path described below continues to block nonzero offsets.
+
 Current Windows blocker: see [MT5 timestamp investigation](MT5_TIMESTAMP_INVESTIGATION.md). A roughly three-hour future tick remains NO_TRADE; no trusted nonzero offset is available. Keep proposals disabled and the kill switch active.
 
 This guide verifies read-only evidence. It does not enable proposals or trading.

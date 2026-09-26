@@ -1,5 +1,17 @@
 # Independent agent handoff
 
+Implementation update: [HFM read-only normalization](HFM_READONLY_NORMALIZATION.md)
+adds an explicit CLI-only policy and measurements after the operator requested
+implementation. Default application/proposal timestamp evaluation is unchanged.
+Real Windows validation remains outstanding; do not assume a PASS.
+
+Latest timestamp evidence/design (2026-09-26):
+[inactive candidate policy revision 1](MT5_TIMESTAMP_CANDIDATE_POLICY.md).
+Records the MQL5 moderator's broker-time statement and the operator-supplied HFM
+email. These are supporting evidence, not activation approval. Requires distinct
+tick/copy_ticks proof, exact Python/MT5/build/server bindings, independent timing
+evidence and rejection of DST ambiguity or offset changes. No runtime changes.
+
 Current Windows blocker: see [MT5 timestamp investigation](MT5_TIMESTAMP_INVESTIGATION.md). A roughly three-hour future tick remains NO_TRADE; no trusted nonzero offset is available. The read-only verifier now captures per-call UTC bounds, runtime/build identity, progression and apparent-difference stability, and can write a redacted support report. HFM's dated GMT+2/GMT+3 server-clock policy is context only because it does not define Python tick epoch semantics. Keep proposals disabled and the kill switch active.
 
 Start with [CURRENT_PROGRESS_REPORT_2026-09-25.md](CURRENT_PROGRESS_REPORT_2026-09-25.md). It records the latest repository acceptance result plus the manually verified TradingView delivery and Mac MT5 demo-monitor progress. It supersedes older runtime and test counts in historical reports.

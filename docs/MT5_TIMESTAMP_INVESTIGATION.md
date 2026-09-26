@@ -1,6 +1,21 @@
 # MT5 timestamp investigation — read-only verification remains blocked
 
+Implementation update: the operator subsequently requested a scoped normalization
+layer. [HFM read-only normalization](HFM_READONLY_NORMALIZATION.md) documents the
+explicit CLI policy, conditional seasonal conversion, distinct-tick checks and
+remaining evidence limits. The Windows runtime has not yet been verified with
+this new mode. Earlier inactive-only statements below describe prior scope.
+
 DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.
+
+## Evidence update — 2026-09-26
+
+See [candidate policy revision 1](MT5_TIMESTAMP_CANDIDATE_POLICY.md) for the
+MQL5 moderator statement and operator-supplied HFM written reply. They strongly
+support broker-server-time behavior as a hypothesis. They do not establish a
+complete API/DST policy. The candidate is documentation only, inactive and
+unverified; the observed Windows discrepancy remains NO_TRADE. Historical
+findings below describe the earlier evidence state. No conversion is activated.
 
 ## Finding and limits
 
