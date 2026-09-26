@@ -296,14 +296,16 @@ class VerifierTimeTests(unittest.TestCase):
         for secret in ('900001','DEMO-SERVER'):
             self.assertNotIn(secret,json.dumps(report))
 
-    def test_no_submission_call_added_to_production(self):
+    def test_submission_exists_only_in_the_isolated_demo_worker(self):
         root = Path(__file__).resolve().parent.parent
+        found=[]
         for path in [root/'server.py', *list((root/'engine').glob('*.py')), *list((root/'scripts').glob('*.py'))]:
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call):
                     name = getattr(node.func, 'attr', getattr(node.func, 'id', ''))
-                    self.assertNotEqual(name, 'order_send', str(path))
+                    if name == 'order_send': found.append(path.name)
+        self.assertEqual(found,['demo_execution_worker.py'])
 
 
 if __name__ == '__main__':

@@ -40,7 +40,8 @@ def _fresh(value, code, now):
     return age
 
 
-def validate_snapshot(snapshot, signal, expected_login, expected_server, now=None):
+def validate_snapshot(snapshot, signal, expected_login, expected_server, now=None,
+                      expected_terminal_trade_allowed=False, maximum_balance_equity=None):
     """Return a redaction-safe summary or raise a stable fail-closed code."""
     now = now or utcnow()
     if not isinstance(snapshot, dict) or snapshot.get("protocol") != PROTOCOL or snapshot.get("operation") != "snapshot":
@@ -63,9 +64,9 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
     terminal = _result(snapshot, "terminal_info")
     if terminal.get("connected") is not True:
         raise InvalidData("MT5_TERMINAL_DISCONNECTED")
-    # A proposal collector does not need terminal AutoTrading. Fail closed if it is on.
-    if terminal.get("trade_allowed") is not False:
-        raise InvalidData("MT5_TERMINAL_AUTOTRADING_NOT_PROVEN_OFF")
+    if terminal.get("trade_allowed") is not expected_terminal_trade_allowed:
+        state = "ON" if expected_terminal_trade_allowed else "OFF"
+        raise InvalidData("MT5_TERMINAL_AUTOTRADING_NOT_PROVEN_" + state)
 
     account = _result(snapshot, "account_info")
     if not expected_login or not expected_server:
@@ -93,7 +94,9 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
     if account.get("trade_allowed") is not True:
         raise InvalidData("MT5_ACCOUNT_RESTRICTED_OR_UNKNOWN")
     for key in ("balance", "equity"):
-        _number(account, key, positive=True)
+        value = _number(account, key, positive=True)
+        if maximum_balance_equity is not None and value > decimal(maximum_balance_equity):
+            raise InvalidData("MT5_DEMO_BALANCE_EQUITY_CEILING_EXCEEDED")
     for key in ("margin", "margin_free", "margin_level"):
         _number(account, key, nonnegative=True)
     _number(account, "leverage", positive=True)
@@ -138,7 +141,7 @@ def validate_snapshot(snapshot, signal, expected_login, expected_server, now=Non
         "identity_match": True,
         "demo_account_proven": True,
         "terminal_connected": True,
-        "terminal_autotrading": False,
+        "terminal_autotrading": expected_terminal_trade_allowed,
         "account_currency": "USD",
         "positions_count": 0,
         "pending_orders_count": 0,

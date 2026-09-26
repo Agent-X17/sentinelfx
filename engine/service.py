@@ -127,9 +127,9 @@ class Application:
             'entry_reference_price':decision.get('entry'),'stop_loss':decision.get('stop_loss'),'take_profit':decision.get('take_profit'),
             'exact_volume':calculations['position_size'],'monetary_risk':calculations['estimated_max_loss'],'risk_reward':calculations['reward_risk'],
             'account_snapshot':safe_account,'risk_vetoes':list(decision.get('blocking_factors') or []),
-            'warnings':['DEMO ORDER NOT SENT — EXECUTION IS NOT IMPLEMENTED.','Approval records intent only and cannot submit an MT5 order.'],
+            'warnings':['DEMO ORDER NOT SENT.','Approval records intent only; a separate disabled-by-default local CLI performs all gates again.'],
             'risk_validation':decision.get('validation_results',[]),'calculations':calculations,'evidence':evidence,
-            'status':'PENDING_LOCAL_REVIEW','order_sent':False,'execution_implemented':False,
+            'status':'PENDING_LOCAL_REVIEW','order_sent':False,'execution_implemented':True,
             'created_at':now.isoformat(),'expires_at':expires.isoformat(),
         }
         proposal=redact(proposal,(settings.webhook_secret,settings.demo_expected_account_login,settings.demo_expected_broker_server))
@@ -167,7 +167,7 @@ class Application:
                 approved=db.execute("SELECT COUNT(*) FROM demo_trade_proposal_history WHERE action='APPROVED' AND substr(created_at,1,10)=?",(utcnow().date().isoformat(),)).fetchone()[0]
                 if approved >= settings.demo_max_trades_per_day: raise InvalidData('DEMO_MAX_TRADES_PER_DAY_REACHED')
             new=mapping[action]; value=self._proposal_row(row)
-            value.update(status=new,review_reason=reason,reviewed_at=stamp(),order_sent=False,execution_implemented=False)
+            value.update(status=new,review_reason=reason,reviewed_at=stamp(),order_sent=False,execution_implemented=True)
             db.execute('UPDATE demo_trade_proposals SET status=?,updated_at=?,payload=? WHERE id=?',(new,value['reviewed_at'],dumps(value),proposal_id))
             self._proposal_history(db,proposal_id,action.upper() if action!='expire' else 'EXPIRED',old,new,reason,{'order_sent':False})
             return value

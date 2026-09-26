@@ -51,6 +51,7 @@ def status_document(settings,mt5,port):
           ('TradingView webhook',f'http://127.0.0.1:{port}/api/webhook/tradingview'),('Webhook secret','configured' if settings.webhook_secret else 'not configured'),
           ('Accepted external hosts',allowed),('MT5 diagnostic mode',settings.mt5_diagnostic_mode),('MT5 status',state['code']),
           ('Demo proposals','ENABLED' if settings.demo_trade_proposals_enabled else 'disabled'),('Proposal kill switch','ACTIVE' if settings.demo_trade_proposal_kill_switch else 'clear'),
+          ('Demo execution gate','ENABLED — LOCAL CLI ONLY' if settings.demo_execution_gated else 'disabled'),
           ('Last diagnostic',operational.get('last_diagnostic_at') or 'none'),('Drift latch','ACTIVE' if operational.get('drift_latched') else 'clear'),
           ('MetaTrader5 package','installed' if host['package_available'] else 'not installed'),('Real MT5 host support','available' if host['real_diagnostics_prerequisites_met'] else 'not available on this host'),
           ('Paper-connected eligibility','NOT ELIGIBLE'),('Live execution','DISABLED — not implemented'))

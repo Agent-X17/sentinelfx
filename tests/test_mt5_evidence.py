@@ -97,7 +97,7 @@ class VerifiedProposalIntegrationTests(unittest.TestCase):
             payload={'alert_id':'verified-1','symbol':'EURUSD','side':'BUY','timeframe':'H1','strategy':'test breakout','timestamp':stamp(),'entry':'1.1001','stop_loss':'1.0980','take_profit':'1.1045','metadata':{'strategy_type':'breakout'}}
             result=bridge.ingest(payload,settings.webhook_secret)
             self.assertEqual(result['decision'],'DEMO_TRADE_PROPOSAL');self.assertFalse(result['order_sent']);self.assertEqual(len(checker.calls),1)
-            proposal=result['proposal'];self.assertEqual(proposal['evidence']['evidence_source'],'VERIFIED_READ_ONLY_MT5');self.assertFalse(proposal['execution_implemented'])
+            proposal=result['proposal'];self.assertEqual(proposal['evidence']['evidence_source'],'VERIFIED_READ_ONLY_MT5');self.assertTrue(proposal['execution_implemented'])
             self.assertNotIn('900001',str(app.snapshot()));self.assertNotIn('DEMO-SERVER',str(app.snapshot()))
 
 

@@ -42,6 +42,10 @@ class Settings:
     demo_max_trades_per_day: int = 2
     demo_expected_account_login: str = ""
     demo_expected_broker_server: str = ""
+    demo_account_tag: str = ""
+    demo_execution_gated: bool = False
+    hfm_demo_policy_path: str = ""
+    demo_emergency_stop_path: str = ""
 
     @classmethod
     def from_env(cls, root: Path, database_override: str = None):
@@ -71,6 +75,10 @@ class Settings:
             demo_max_trades_per_day=int(os.environ.get("DEMO_MAX_TRADES_PER_DAY", "2")),
             demo_expected_account_login=os.environ.get("DEMO_EXPECTED_ACCOUNT_LOGIN", "").strip(),
             demo_expected_broker_server=os.environ.get("DEMO_EXPECTED_BROKER_SERVER", "").strip(),
+            demo_account_tag=os.environ.get("DEMO_ACCOUNT_TAG", "").strip(),
+            demo_execution_gated=_bool(os.environ.get("DEMO_EXECUTION_GATED"), False),
+            hfm_demo_policy_path=os.environ.get("HFM_DEMO_POLICY_PATH", "").strip(),
+            demo_emergency_stop_path=os.environ.get("DEMO_EMERGENCY_STOP_PATH", str(root / "data" / "DEMO_EMERGENCY_STOP")).strip(),
         )
         settings.validate()
         return settings
@@ -103,6 +111,22 @@ class Settings:
             raise InvalidData("DEMO_MAX_DAILY_LOSS_PCT cannot exceed 1.0")
         if self.demo_max_open_positions != 1 or not 1 <= self.demo_max_trades_per_day <= 2:
             raise InvalidData("Demo proposal position/trade limits cannot be loosened")
+        if self.demo_execution_gated:
+            if self.mode != "SIMULATION" or self.live_execution_enabled:
+                raise InvalidData("DEMO_EXECUTION_GATED requires simulation mode and live execution disabled")
+            if self.mt5_diagnostic_mode != "real":
+                raise InvalidData("DEMO_EXECUTION_GATED requires real local MT5 diagnostics")
+            if (not self.demo_trade_proposals_enabled or self.demo_trade_proposal_kill_switch
+                    or not self.explicit_order_confirmation_required):
+                raise InvalidData("DEMO_EXECUTION_GATED requires enabled reviewed proposals, inactive proposal kill switch, and explicit confirmation")
+            if not self.demo_expected_account_login or not self.demo_expected_broker_server:
+                raise InvalidData("DEMO_EXECUTION_GATED requires the exact configured demo identity")
+            if self.demo_account_tag != "DEMO_ONLY":
+                raise InvalidData("DEMO_EXECUTION_GATED requires DEMO_ACCOUNT_TAG=DEMO_ONLY")
+            if not self.hfm_demo_policy_path:
+                raise InvalidData("DEMO_EXECUTION_GATED requires HFM_DEMO_POLICY_PATH")
+            if self.webhook_allowed_hosts:
+                raise InvalidData("DEMO_EXECUTION_GATED is local CLI only; external webhook hosts are forbidden")
         return self
 
     def public(self):
@@ -111,4 +135,6 @@ class Settings:
         data["mt5_terminal_path_configured"] = bool(data.pop("mt5_terminal_path"))
         data["demo_expected_account_login_configured"] = bool(data.pop("demo_expected_account_login"))
         data["demo_expected_broker_server_configured"] = bool(data.pop("demo_expected_broker_server"))
+        data["hfm_demo_policy_path_configured"] = bool(data.pop("hfm_demo_policy_path"))
+        data["demo_emergency_stop_path_configured"] = bool(data.pop("demo_emergency_stop_path"))
         return data

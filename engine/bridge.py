@@ -2,6 +2,9 @@
 from decimal import Decimal
 from dataclasses import replace
 from uuid import uuid4
+import json
+from pathlib import Path
+import time
 
 from .domain import InvalidData, decimal, stamp, date, utcnow
 from .storage import Store, dumps, loads
@@ -11,6 +14,7 @@ from .diagnostics import validate_diagnostics
 from .isolated_mt5 import SnapshotMT5
 from .mt5_worker import collect
 from .mt5_evidence import validate_snapshot, validate_order_request
+from .hfm_demo_time import evaluate as evaluate_hfm_demo, report_safe as hfm_report_safe
 
 
 class TradingBridge:
@@ -45,7 +49,27 @@ class TradingBridge:
             if self.authenticator.verify(secret):
                 check=self.webhook_service.validate(payload,idempotency_key)
                 if check.accepted and self.settings.mode != 'DISCONNECTED':
-                    data = self.mt5.snapshot(check.signal['mt5_symbol']) if hasattr(self.mt5,'snapshot') else collect(self.mt5,check.signal['mt5_symbol'])
+                    if (self.settings.demo_trade_proposals_enabled and self.settings.hfm_demo_policy_path
+                            and hasattr(self.mt5, 'snapshot')):
+                        samples=[]
+                        try:
+                            policy_path=Path(self.settings.hfm_demo_policy_path).resolve()
+                            policy=json.loads(policy_path.read_text(encoding='utf-8'))
+                            state_path=policy_path.with_suffix(policy_path.suffix+'.demo-state.json')
+                            previous=json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else None
+                            for index in range(3):
+                                if index: time.sleep(1)
+                                samples.append(self.mt5.snapshot(check.signal['mt5_symbol'],timestamp_reads=True))
+                            normalized=evaluate_hfm_demo(samples,policy,utcnow(),
+                                self.settings.demo_expected_account_login,self.settings.demo_expected_broker_server,
+                                check.signal['mt5_symbol'],previous,require_autotrading=False)
+                            data=normalized['normalized_snapshot']
+                            data['hfm_demo_level1']=hfm_report_safe(normalized)
+                        except Exception as exc:
+                            data=samples[-1] if samples else {'protocol':'sentinelfx.mt5.readonly-evidence.v1','operation':'snapshot'}
+                            data['status']={'ok':False,'code':str(exc) if isinstance(exc,InvalidData) else 'HFM_DEMO_EVIDENCE_INVALID','message':'Demo Level 1 validation failed','data':None}
+                    else:
+                        data = self.mt5.snapshot(check.signal['mt5_symbol']) if hasattr(self.mt5,'snapshot') else collect(self.mt5,check.signal['mt5_symbol'])
                     bridge=TradingBridge(self.application,self.webhook_service,self.authenticator,SnapshotMT5(data),self.settings,
                                          proposal_order_checker=self.mt5,snapshot_data=data)
                     return bridge.ingest(payload,secret,idempotency_key)
@@ -235,6 +259,8 @@ class TradingBridge:
         if isinstance(self.mt5,SnapshotMT5):
             try:
                 verified=validate_snapshot(self.snapshot_data,signal,expected_login,expected_server)
+                if isinstance(self.snapshot_data.get('hfm_demo_level1'),dict):
+                    verified['hfm_demo_level1']=self.snapshot_data['hfm_demo_level1']
             except InvalidData as exc:
                 failures.append(str(exc))
             if self.proposal_order_checker is None or not hasattr(self.proposal_order_checker,'read_only_order_check'):
